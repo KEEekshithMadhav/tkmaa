@@ -5,10 +5,14 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase env vars. Check your .env.local file.')
+  console.warn('⚠️ Warning: Missing Supabase env vars. Supabase client initialized with placeholders.')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Fallback to placeholder values if env vars are not set (e.g. during build/prerendering phases)
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key'
+)
 
 // ── Auth helpers ──
 export async function getCurrentUser() {
