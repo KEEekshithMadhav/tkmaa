@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { User, Shield, Mail, Phone, Lock, RefreshCw, Save, Loader2, Key } from "lucide-react"
+import { User, Lock, RefreshCw, Save, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -75,27 +75,30 @@ export default function ProfilePage() {
   }
 
   if (loading) return (
-    <div className="h-full flex items-center justify-center">
-      <Loader2 className="animate-spin text-gold" size={40} />
+    <div className="h-[60vh] flex items-center justify-center">
+      <Loader2 className="animate-spin text-[#C5A059]" size={40} />
     </div>
   )
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      <header>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-2 h-2 rounded-full bg-gold animate-pulse shadow-[0_0_10px_rgba(214,184,106,0.5)]" />
-          <h2 className="text-gold text-[10px] tracking-[0.5em] uppercase font-black">Account Settings</h2>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#0A1F30] sm:text-3xl">
+            My Profile
+          </h1>
+          <p className="mt-1 font-sans text-sm text-gray-500">
+            Manage your account settings and preferences
+          </p>
         </div>
-        <h1 className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-none">My <span className="text-gold italic outline-text">Profile</span></h1>
       </header>
 
       {msg.text && (
         <motion.div 
           initial={{ opacity: 0, y: -10 }} 
           animate={{ opacity: 1, y: 0 }}
-          className={`p-4 text-xs font-bold uppercase tracking-widest border ${
-            msg.type === 'success' ? 'bg-green-500/10 border-green-500/50 text-green-500' : 'bg-red-500/10 border-red-500/50 text-red-500'
+          className={`p-4 rounded-xl text-xs font-semibold ${
+            msg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
           }`}
         >
           {msg.text}
@@ -104,95 +107,95 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Personal Details */}
-        <Card className="bg-[#1B2230]/60 border-white/[0.06] backdrop-blur-xl rounded-none">
-          <CardHeader className="border-b border-white/5">
-            <CardTitle className="text-xs uppercase tracking-[0.3em] text-gold font-black flex items-center gap-2">
-              <User size={14} /> Personal Details
+        <Card className="rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <CardHeader className="border-b border-gray-100 p-6">
+            <CardTitle className="text-sm uppercase tracking-wider text-[#0A1F30] font-bold flex items-center gap-2">
+              <User size={16} className="text-[#C5A059]" /> Personal Details
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6">
-            <form onSubmit={handleUpdate} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-white/40">Full Name</label>
+            <form onSubmit={handleUpdate} className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Full Name</label>
                 <Input 
-                  value={user.full_name || ''} 
+                  value={user?.full_name || ''} 
                   onChange={e => setUser({...user, full_name: e.target.value})}
-                  className="bg-white/5 border-white/10 rounded-none h-12 text-sm"
+                  className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-white/40">Email Address (Read-only)</label>
+              <div className="space-y-2">
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Email Address (Read-only)</label>
                 <Input 
-                  value={user.email || ''} 
+                  value={user?.email || ''} 
                   disabled
-                  className="bg-white/5 border-white/10 rounded-none h-12 text-sm opacity-50 cursor-not-allowed"
+                  className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm opacity-60 cursor-not-allowed"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-white/40">Phone Number</label>
+              <div className="space-y-2">
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Phone Number</label>
                 <Input 
-                  value={user.phone || ''} 
+                  value={user?.phone || ''} 
                   onChange={e => setUser({...user, phone: e.target.value})}
-                  className="bg-white/5 border-white/10 rounded-none h-12 text-sm"
+                  className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-white/40">System Role</label>
-                <div className="h-12 flex items-center px-4 bg-white/5 border border-dashed border-white/20 text-gold font-black uppercase text-xs tracking-widest">
-                  {user.role}
+              <div className="space-y-2">
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">System Role</label>
+                <div className="h-10 flex items-center px-4 bg-gray-50 border border-dashed border-gray-200 rounded-lg text-[#C5A059] font-bold uppercase text-xs tracking-widest">
+                  {user?.role}
                 </div>
               </div>
               <Button 
                 type="submit" 
                 disabled={updating}
-                className="w-full bg-gold text-black hover:bg-gold-dark font-black uppercase tracking-widest h-12 rounded-none mt-4"
+                className="w-full bg-[#0A1F30] hover:bg-[#0A1F30]/90 text-white font-semibold rounded-lg h-10 mt-6"
               >
-                {updating ? <Loader2 className="animate-spin" size={18} /> : <><Save size={18} className="mr-2" /> Save Changes</>}
+                {updating ? <Loader2 className="animate-spin" size={18} /> : <><Save size={16} className="mr-2" /> Save Changes</>}
               </Button>
             </form>
           </CardContent>
         </Card>
 
         {/* Security */}
-        <Card className="bg-[#1B2230]/60 border-white/[0.06] backdrop-blur-xl rounded-none">
-          <CardHeader className="border-b border-white/5">
-            <CardTitle className="text-xs uppercase tracking-[0.3em] text-gold font-black flex items-center gap-2">
-              <Lock size={14} /> Security & Access
+        <Card className="rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <CardHeader className="border-b border-gray-100 p-6">
+            <CardTitle className="text-sm uppercase tracking-wider text-[#0A1F30] font-bold flex items-center gap-2">
+              <Lock size={16} className="text-[#C5A059]" /> Security & Access
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6">
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-white/40">New Password</label>
+            <form onSubmit={handleChangePassword} className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">New Password</label>
                 <Input 
                   type="password"
                   value={passwords.new} 
                   onChange={e => setPasswords({...passwords, new: e.target.value})}
-                  className="bg-white/5 border-white/10 rounded-none h-12 text-sm"
+                  className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm"
                   required
                   minLength={6}
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-white/40">Confirm New Password</label>
+              <div className="space-y-2">
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Confirm New Password</label>
                 <Input 
                   type="password"
                   value={passwords.confirm} 
                   onChange={e => setPasswords({...passwords, confirm: e.target.value})}
-                  className="bg-white/5 border-white/10 rounded-none h-12 text-sm"
+                  className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm"
                   required
                 />
               </div>
-              <div className="p-4 bg-white/5 border border-white/10 text-[10px] text-white/40 uppercase tracking-widest leading-relaxed">
+              <div className="p-4 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-500 leading-relaxed">
                 Password must be at least 6 characters long. For security, do not share your password with anyone.
               </div>
               <Button 
                 type="submit" 
                 disabled={updating}
                 variant="outline"
-                className="w-full border-white/10 hover:bg-white/5 text-white font-black uppercase tracking-widest h-12 rounded-none mt-4"
+                className="w-full border-gray-200 hover:bg-gray-50 text-[#0A1F30] font-semibold rounded-lg h-10 mt-6"
               >
-                {updating ? <Loader2 className="animate-spin" size={18} /> : <><RefreshCw size={18} className="mr-2" /> Update Password</>}
+                {updating ? <Loader2 className="animate-spin" size={18} /> : <><RefreshCw size={16} className="mr-2" /> Update Password</>}
               </Button>
             </form>
           </CardContent>

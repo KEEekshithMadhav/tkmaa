@@ -94,3 +94,51 @@ export async function getAttendance(studentId) {
     .limit(30)
   return { data, error }
 }
+
+// ── Role & Permission helpers ──
+export async function updateUserRole(userId, newRole) {
+  const { data, error } = await supabase
+    .from('users')
+    .update({ role: newRole })
+    .eq('id', userId)
+    .select()
+    .single()
+  return { data, error }
+}
+
+export async function getBranchManagers(branchId) {
+  const { data, error } = await supabase
+    .from('branch_managers')
+    .select('*, users(id, full_name, email, role, avatar_url)')
+    .eq('branch_id', branchId)
+  return { data, error }
+}
+
+export async function assignBranchManager(userId, branchId) {
+  // First update the user's role
+  await supabase.from('users').update({ role: 'branch_manager' }).eq('id', userId)
+  // Then create the assignment
+  const { data, error } = await supabase
+    .from('branch_managers')
+    .insert([{ user_id: userId, branch_id: branchId }])
+    .select()
+    .single()
+  return { data, error }
+}
+
+export async function removeBranchManager(userId, branchId) {
+  const { error } = await supabase
+    .from('branch_managers')
+    .delete()
+    .eq('user_id', userId)
+    .eq('branch_id', branchId)
+  return { error }
+}
+
+export async function getAllUsers() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, full_name, email, role, phone')
+    .order('full_name')
+  return { data, error }
+}

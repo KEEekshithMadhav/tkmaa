@@ -4,43 +4,49 @@ import { motion, AnimatePresence } from "framer-motion"
 import { 
   LayoutDashboard, Users, UserRound, MapPin, 
   CreditCard, Bell, Settings, LogOut, Trophy, 
-  CalendarCheck, Menu, X, ChevronRight, Shield
+  CalendarCheck, Menu, X, ChevronRight, Shield,
+  Layers, Package
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { supabase, getUserRole } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
+import { useBranch } from "@/context/BranchContext"
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Overview", href: "/dashboard", roles: ['admin', 'trainer', 'student'] },
-  { icon: Users, label: "Students", href: "/dashboard/students", roles: ['admin', 'trainer'] },
-  { icon: UserRound, label: "Trainers", href: "/dashboard/trainers", roles: ['admin'] },
+  { icon: LayoutDashboard, label: "Overview", href: "/dashboard", roles: ['admin', 'trainer', 'student', 'branch_manager'] },
+  { icon: Users, label: "Students", href: "/dashboard/students", roles: ['admin', 'trainer', 'branch_manager'] },
+  { icon: UserRound, label: "Trainers", href: "/dashboard/trainers", roles: ['admin', 'branch_manager'] },
+  { icon: Layers, label: "Batches", href: "/dashboard/batches", roles: ['admin', 'trainer', 'branch_manager'] },
   { icon: MapPin, label: "Branches", href: "/dashboard/branches", roles: ['admin'] },
-  { icon: Trophy, label: "Tournaments", href: "/dashboard/tournaments", roles: ['admin', 'trainer', 'student'] },
-  { icon: CalendarCheck, label: "Attendance", href: "/dashboard/attendance", roles: ['admin', 'trainer'] },
-  { icon: CreditCard, label: "Payments", href: "/dashboard/payments", roles: ['admin'] },
-  { icon: Bell, label: "Notices", href: "/dashboard/notices", roles: ['admin', 'trainer', 'student'] },
+  { icon: Trophy, label: "Tournaments", href: "/dashboard/tournaments", roles: ['admin', 'trainer', 'student', 'branch_manager'] },
+  { icon: CalendarCheck, label: "Attendance", href: "/dashboard/attendance", roles: ['admin', 'trainer', 'branch_manager'] },
+  { icon: CreditCard, label: "Payments", href: "/dashboard/payments", roles: ['admin', 'branch_manager'] },
+  { icon: Package, label: "Inventory", href: "/dashboard/inventory", roles: ['admin', 'branch_manager'] },
+  { icon: Bell, label: "Notices", href: "/dashboard/notices", roles: ['admin', 'trainer', 'student', 'branch_manager'] },
+  { icon: Shield, label: "Audit Logs", href: "/dashboard/audit-logs", roles: ['admin'] },
 ]
 
 function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
+  const { branches, selectedBranch, setSelectedBranch } = useBranch()
   return (
-    <div className="flex flex-col h-full bg-[#111827]/90 backdrop-blur-3xl border-r border-white/[0.08] p-8 relative overflow-hidden group/sidebar">
+    <div className="flex flex-col h-full bg-[#0A1F30] border-r border-white/[0.08] p-8 relative overflow-hidden group/sidebar">
       {/* Matrix Scanline Effect */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-50 bg-[length:100%_2px,3px_100%]" />
+      <div className="absolute inset-0 pointer-events-none opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(0,21,27,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-50 bg-[length:100%_2px,3px_100%]" />
       
       {/* Decorative Gradient Background */}
       <div className="absolute top-0 left-0 w-full h-64 bg-gold/[0.04] blur-[80px] -z-10" />
-      <div className="absolute bottom-0 right-0 w-48 h-48 bg-blue-500/[0.02] blur-[60px] -z-10" />
+      <div className="absolute bottom-0 right-0 w-48 h-48 bg-[#1B3022]/[0.02] blur-[60px] -z-10" />
       
       {/* Subtle grid overlay */}
       <div className="absolute inset-0 grid-overlay-dense opacity-30 pointer-events-none" />
       
       <div className="flex items-center gap-4 mb-16 px-2 group cursor-pointer relative z-10">
-        <motion.div 
+         <motion.div 
           whileHover={{ scale: 1.1, rotate: 5 }}
           whileTap={{ scale: 0.95 }}
-          className="w-14 h-14 rounded-full overflow-hidden flex items-center justify-center shadow-[0_0_30px_rgba(214,184,106,0.3)] transition-shadow duration-500 group-hover:shadow-[0_0_40px_rgba(214,184,106,0.5)] border-2 border-gold/30"
+          className="w-14 h-14 rounded-full overflow-hidden flex items-center justify-center shadow-[0_0_30px_rgba(197,160,89,0.3)] transition-shadow duration-500 group-hover:shadow-[0_0_40px_rgba(197,160,89,0.5)] border-2 border-gold/30"
         >
           <Image 
             src="/logo.png" 
@@ -56,7 +62,24 @@ function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
         </div>
       </div>
 
-      <nav className="flex-1 flex flex-col gap-1.5 relative z-10">
+      <div className="px-5 mb-4 relative z-10">
+        <label className="text-[10px] uppercase tracking-wider text-white/50 font-black mb-1.5 block">Global Branch Filter</label>
+        <div className="relative">
+          <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gold/80" />
+          <select
+            value={selectedBranch}
+            onChange={(e) => setSelectedBranch(e.target.value)}
+            className="w-full h-10 pl-9 pr-4 bg-white/5 border border-white/10 rounded-lg text-xs font-semibold text-white outline-none focus:border-gold/50 focus:bg-white/10 transition-all cursor-pointer shadow-sm appearance-none"
+          >
+            <option value="all" className="text-black">Overall Operations</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id} className="text-black">{b.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <nav className="flex-1 flex flex-col gap-1.5 relative z-10 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
         <div className="flex items-center gap-3 mb-5 px-4">
            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
            <p className="text-[8px] uppercase tracking-[0.5em] text-white/20 font-black italic whitespace-nowrap">Navigation</p>
@@ -95,7 +118,7 @@ function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
                     whileHover={{ rotate: isActive ? 0 : 15 }}
                     transition={{ type: "spring", stiffness: 300 }}
                   >
-                    <item.icon size={18} className={`${isActive ? "text-gold drop-shadow-[0_0_8px_rgba(214,184,106,0.5)]" : "text-white/20 group-hover:text-gold/60"} transition-all duration-300`} />
+                    <item.icon size={18} className={`${isActive ? "text-gold drop-shadow-[0_0_8px_rgba(197,160,89,0.5)]" : "text-white/20 group-hover:text-gold/60"} transition-all duration-300`} />
                   </motion.div>
                   <span className="font-black tracking-[0.2em] uppercase text-[10px]">{item.label}</span>
                   
@@ -106,7 +129,7 @@ function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
                       transition={{ type: "spring", stiffness: 500 }}
                       className="ml-auto"
                     >
-                      <div className="w-1.5 h-1.5 bg-gold rounded-full animate-pulse shadow-[0_0_8px_rgba(214,184,106,1),0_0_16px_rgba(214,184,106,0.5)]" />
+                      <div className="w-1.5 h-1.5 bg-gold rounded-full animate-pulse shadow-[0_0_8px_rgba(197,160,89,1),0_0_16px_rgba(197,160,89,0.5)]" />
                     </motion.div>
                   )}
                 </motion.div>
@@ -199,7 +222,7 @@ export default function Sidebar() {
         >
           <Button 
             onClick={() => setIsOpen(true)}
-            className="fixed top-6 left-6 z-[60] bg-gold text-black rounded-none h-12 w-12 p-0 shadow-[0_0_20px_rgba(214,184,106,0.3)] lg:hidden hover:shadow-[0_0_30px_rgba(214,184,106,0.5)] transition-shadow"
+            className="fixed top-6 left-6 z-[60] bg-gold text-black rounded-none h-12 w-12 p-0 shadow-[0_0_20px_rgba(197,160,89,0.3)] lg:hidden hover:shadow-[0_0_30px_rgba(197,160,89,0.5)] transition-shadow"
           >
             <Menu size={24} />
           </Button>

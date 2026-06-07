@@ -16,38 +16,28 @@ import {
   Dialog, 
   DialogContent, 
   DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
+  DialogTitle 
 } from "@/components/ui/dialog"
 import { 
-  Plus, Search, Filter, MoreVertical, 
-  Shield, Star, Loader2, Award, Mail, 
-  Phone, Briefcase, ChevronRight, Download
+  Plus, Search, Filter,
+  Star, Loader2, Award, 
+  ChevronRight, Download
 } from 'lucide-react'
 import { useForm } from "react-hook-form"
-import { supabase, getTrainers, getBranches } from '@/lib/supabase'
+import { supabase, getTrainers } from '@/lib/supabase'
 import { toast } from 'sonner'
+import { useBranch } from '@/context/BranchContext'
 import { Badge } from "@/components/ui/badge"
 
 export default function TrainersPage() {
   const [trainers, setTrainers] = useState([])
-  const [branches, setBranches] = useState([])
+  const { branches, selectedBranch } = useBranch()
   const [loading, setLoading] = useState(true)
-  const [selectedBranch, setSelectedBranch] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [open, setOpen] = useState(false)
 
   const { register, handleSubmit, reset } = useForm()
-
-  useEffect(() => {
-    async function loadInitialData() {
-      const { data } = await getBranches()
-      if (data) setBranches(data)
-    }
-
-    loadInitialData()
-  }, [])
 
   useEffect(() => {
     async function loadTrainers() {
@@ -64,13 +54,21 @@ export default function TrainersPage() {
     setIsSubmitting(true)
     const toastId = toast.loading('Initializing personnel record...')
     try {
+      const email = formData.email?.trim()
+      if (!email) throw new Error('Email is required')
+
+      // Check if email already exists
+      const { data: existingUser } = await supabase.from('users').select('id').eq('email', email).maybeSingle()
+      if (existingUser) throw new Error('A user with this email already exists. Please use a different email.')
+
       const tempId = crypto.randomUUID()
+      // 1. Create User — the DB trigger `handle_new_user_role` auto-creates a trainer record
       const { error: userError } = await supabase
         .from('users')
         .insert([{
           id: tempId,
           clerk_id: tempId,
-          email: formData.email,
+          email: email,
           full_name: formData.fullName,
           phone: formData.phone,
           role: 'trainer'
@@ -78,16 +76,21 @@ export default function TrainersPage() {
         
       if (userError) throw userError
 
+      // 2. UPDATE the trigger-created trainer record with full details
       const { error: trainerError } = await supabase
         .from('trainers')
-        .insert([{
-          user_id: tempId,
+        .update({
           branch_id: formData.branchId,
           experience_yrs: parseInt(formData.experience) || 0,
           specialization: formData.specialization ? formData.specialization.split(',').map(s => s.trim()) : []
-        }])
+        })
+        .eq('user_id', tempId)
 
-      if (trainerError) throw trainerError
+      if (trainerError) {
+        // Cleanup: remove the user we just created if trainer update fails
+        await supabase.from('users').delete().eq('id', tempId)
+        throw trainerError
+      }
 
       toast.success('Personnel record established successfully', { id: toastId })
       setOpen(false)
@@ -102,90 +105,77 @@ export default function TrainersPage() {
 
   const filteredTrainers = trainers.filter(t => 
     t.users?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.specialization?.some(s => s.toLowerCase().includes(searchQuery.toLowerCase()))
+    t.specialization?.some(s => s.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (t.member_id && t.member_id.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
   const exportPersonnel = () => {
     toast.info('Generating personnel report...')
-    // Export logic can be added here
   }
 
   return (
     <div className="space-y-8 pb-20">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-3 mb-2"
-          >
-            <div className="w-2 h-2 rounded-full bg-gold animate-pulse shadow-[0_0_10px_rgba(214,184,106,0.5)]" />
-            <h2 className="text-gold text-[10px] tracking-[0.5em] uppercase font-black">
-              Elite Personnel
-            </h2>
-          </motion.div>
-          <motion.h1 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-none"
-          >
-            Academy <span className="text-gold italic outline-text">Trainers</span>
-          </motion.h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#0A1F30] sm:text-3xl">
+            Academy Trainers
+          </h1>
+          <p className="mt-1 font-sans text-sm text-gray-500">
+            Manage elite personnel and instructor assignments
+          </p>
         </div>
         
-        <div className="flex gap-4">
-          <Button onClick={exportPersonnel} variant="outline" className="border-white/10 text-white/40 hover:text-white hover:bg-white/5 uppercase tracking-[0.3em] text-[9px] font-black h-12 rounded-none px-8 transition-all">
+        <div className="flex gap-2">
+          <Button onClick={exportPersonnel} variant="outline" className="rounded-lg text-xs">
             <Download className="mr-2" size={14} /> Export
           </Button>
 
+          <Button onClick={() => setOpen(true)} className="bg-[#0A1F30] hover:bg-[#0A1F30]/90 text-white rounded-lg text-xs">
+            <Plus className="mr-2" size={16} /> Add Trainer
+          </Button>
+
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-gold text-black hover:bg-gold/90 font-black uppercase tracking-[0.2em] text-[10px] px-8 h-12 rounded-none glow-gold transition-all">
-                <Plus className="mr-2" size={16} /> Add Trainer
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-[#1B2230]/95 border-white/[0.08] backdrop-blur-3xl text-white rounded-none max-w-lg p-0 overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)]">
-              <DialogHeader className="p-8 bg-white/5 border-b border-white/5">
-                <DialogTitle className="text-xl font-black uppercase tracking-widest text-gold">Establish Personnel Entry</DialogTitle>
+            <DialogContent className="bg-white border border-gray-200 rounded-2xl max-w-lg p-0 overflow-hidden">
+              <DialogHeader className="p-6 border-b border-gray-100">
+                <DialogTitle className="text-lg font-heading font-bold text-[#0A1F30]">Establish Personnel Entry</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleSubmit(onSubmit)} className="p-8 space-y-6">
+              <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-5">
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Full Identity</label>
-                  <Input {...register("fullName")} className="bg-white/5 border-white/10 rounded-none h-12 text-sm uppercase tracking-wide" placeholder="Enter Full Name" required />
+                  <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Full Identity</label>
+                  <Input {...register("fullName")} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" placeholder="Enter Full Name" required />
                 </div>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Email Interface</label>
-                    <Input {...register("email")} type="email" className="bg-white/5 border-white/10 rounded-none h-12 text-sm" placeholder="email@tkmaa.com" required />
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Email Interface</label>
+                    <Input {...register("email")} type="email" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" placeholder="email@tkmaa.com" required />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Access Key</label>
-                    <Input {...register("password")} type="text" className="bg-white/5 border-white/10 rounded-none h-12 text-sm" placeholder="Set Password" required />
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Access Key</label>
+                    <Input {...register("password")} type="text" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" placeholder="Set Password" required />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Experience (Cycles)</label>
-                    <Input {...register("experience")} type="number" className="bg-white/5 border-white/10 rounded-none h-12 text-sm" placeholder="Years" />
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Experience (Cycles)</label>
+                    <Input {...register("experience")} type="number" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" placeholder="Years" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Operational Hub</label>
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Operational Hub</label>
                     <select 
                       {...register("branchId")}
-                      className="w-full bg-white/5 border border-white/10 rounded-none h-12 px-4 text-sm focus:border-gold outline-none uppercase font-bold"
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059] focus:ring-2 focus:ring-[#C5A059]/10"
                     >
-                      {branches.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
+                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Core Specializations</label>
-                  <Input {...register("specialization")} placeholder="e.g. Karate, MMA, Weaponry" className="bg-white/5 border-white/10 rounded-none h-12 text-sm uppercase tracking-widest" />
+                  <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Core Specializations</label>
+                  <Input {...register("specialization")} placeholder="e.g. Karate, MMA, Weaponry" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
                 </div>
-                <div className="flex gap-4 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1 border-white/10 text-white hover:bg-white/5 h-14 rounded-none uppercase font-black tracking-widest text-xs">Cancel</Button>
-                  <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gold text-black h-14 rounded-none uppercase font-black tracking-widest text-xs glow-gold">
+                <div className="flex gap-3 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1 rounded-lg border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</Button>
+                  <Button type="submit" disabled={isSubmitting} className="flex-1 bg-[#C5A059] hover:bg-[#C5A059]/90 text-white rounded-lg">
                     {isSubmitting ? <Loader2 className="animate-spin" /> : "Authorize Entry"}
                   </Button>
                 </div>
@@ -195,60 +185,51 @@ export default function TrainersPage() {
         </div>
       </header>
 
-      <Card className="bg-[#1B2230]/60 border-white/[0.06] backdrop-blur-xl rounded-none overflow-hidden relative">
-        <motion.div initial={{ top: "-5%" }} animate={{ top: "105%" }} transition={{ duration: 5, repeat: Infinity, ease: "linear" }} className="absolute left-0 w-full h-px bg-gradient-to-r from-transparent via-gold/15 to-transparent z-20 pointer-events-none" />
-        <div className="p-6 border-b border-white/[0.06] bg-white/[0.02] flex flex-col md:flex-row gap-6 justify-between items-center">
-          <div className="relative w-full md:w-96 group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold transition-colors" size={18} />
+      <Card className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row gap-4 justify-between items-center">
+          <div className="relative w-full sm:w-80 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#C5A059] transition-colors" size={16} />
             <Input 
-              placeholder="SEARCH BY NAME OR SPECIALIZATION..." 
+              placeholder="Search by ID, name or specialization..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 bg-white/5 border-white/10 focus:border-gold/50 rounded-none h-12 uppercase text-[10px] tracking-widest font-bold transition-all"
+              className="pl-9 bg-white border-gray-200 focus:border-[#C5A059] focus:ring-[#C5A059]/20 rounded-lg h-10 text-sm transition-all"
             />
           </div>
-          <div className="flex gap-4 items-center w-full md:w-auto">
-            <Filter size={16} className="text-white/20" />
-            <select 
-              value={selectedBranch} 
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="bg-white/5 border border-white/10 h-12 px-6 rounded-none text-[10px] font-black uppercase tracking-widest outline-none focus:border-gold transition-all cursor-pointer"
-            >
-              <option value="all" className="bg-black">All Hubs</option>
-              {branches.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
-            </select>
+          <div className="flex gap-3 items-center w-full sm:w-auto">
+            {/* Branch dropdown moved to Sidebar */}
           </div>
         </div>
 
         <div className="relative overflow-x-auto">
           <Table>
-            <TableHeader className="bg-white/5">
-              <TableRow className="border-white/10 hover:bg-transparent">
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14 pl-8">Instructor</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14">Branch</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14">Experience</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14">Specialization</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14 text-right pr-8">Actions</TableHead>
+            <TableHeader className="bg-gray-50/80 border-b border-gray-100">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider py-4 pl-6">Instructor</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Branch</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Experience</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Specialization</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider text-right pr-6">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <AnimatePresence mode="popLayout">
                 {loading ? (
                   [1, 2, 3, 4, 5].map(i => (
-                    <TableRow key={i} className="border-white/[0.04]">
-                      <TableCell className="pl-8 py-5"><div className="flex items-center gap-4"><div className="w-10 h-10 rounded-full bg-white/[0.04] shimmer" /><div className="space-y-2"><div className="h-3 w-28 bg-white/[0.04] shimmer" /><div className="h-2 w-20 bg-white/[0.03] shimmer" /></div></div></TableCell>
-                      <TableCell><div className="h-3 w-20 bg-white/[0.04] shimmer" /></TableCell>
-                      <TableCell><div className="h-3 w-16 bg-white/[0.04] shimmer" /></TableCell>
-                      <TableCell><div className="h-5 w-24 bg-white/[0.04] shimmer" /></TableCell>
-                      <TableCell><div className="h-6 w-6 bg-white/[0.04] shimmer ml-auto mr-8" /></TableCell>
+                    <TableRow key={i} className="border-b border-gray-50">
+                      <TableCell className="pl-6 py-4"><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-gray-100 animate-pulse" /><div className="space-y-2"><div className="h-3 w-24 bg-gray-100 animate-pulse rounded" /><div className="h-2 w-32 bg-gray-100 animate-pulse rounded" /></div></div></TableCell>
+                      <TableCell><div className="h-3 w-20 bg-gray-100 animate-pulse rounded" /></TableCell>
+                      <TableCell><div className="h-3 w-16 bg-gray-100 animate-pulse rounded" /></TableCell>
+                      <TableCell><div className="h-5 w-24 bg-gray-100 animate-pulse rounded" /></TableCell>
+                      <TableCell><div className="h-6 w-6 bg-gray-100 animate-pulse rounded ml-auto mr-4" /></TableCell>
                     </TableRow>
                   ))
                 ) : filteredTrainers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="h-64 text-center">
-                      <div className="flex flex-col items-center justify-center text-white/20 uppercase tracking-[0.3em] font-black">
-                        <Award size={48} className="mb-4 opacity-10" />
-                        No Personnel Found
+                      <div className="flex flex-col items-center justify-center text-gray-400">
+                        <Award size={40} className="mb-3 opacity-20" />
+                        <p className="text-sm">No Personnel Found</p>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -257,44 +238,46 @@ export default function TrainersPage() {
                   return (
                   <motion.tr
                     layout
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: i * 0.05 }}
+                    transition={{ delay: i * 0.02 }}
                     key={trainer.id}
-                    className="group border-white/[0.04] hover:bg-white/[0.03] hover:shadow-[inset_3px_0_0_rgba(214,184,106,0.4)] transition-all duration-300 cursor-pointer"
+                    className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors group cursor-pointer"
                   >
-                    <TableCell className="pl-8 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-gold/10 flex items-center justify-center text-gold font-black text-xs border border-gold/20">
+                    <TableCell className="pl-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center text-blue-700 font-bold text-xs border border-blue-100">
                           {trainerUser?.full_name?.charAt(0) || 'U'}
                         </div>
                         <div>
-                          <p className="font-black uppercase tracking-wide text-sm group-hover:text-gold transition-colors">{trainerUser?.full_name}</p>
-                          <p className="text-[9px] text-white/30 uppercase tracking-[0.2em] mt-0.5">{trainerUser?.email}</p>
+                          <p className="font-semibold text-sm text-[#0A1F30]">{trainerUser?.full_name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            <span className="font-mono bg-gray-100 px-1 py-0.5 rounded mr-1.5 font-semibold text-gray-600">{trainer.member_id}</span>
+                            {trainerUser?.email}
+                          </p>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-white/60 font-bold uppercase text-[10px] tracking-widest">
+                    <TableCell className="text-sm text-gray-600">
                       {trainer.branches?.name}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Star size={12} className="text-gold" />
-                        <span className="text-white font-bold text-[10px] uppercase tracking-widest">{trainer.experience_yrs} Cycles</span>
+                      <div className="flex items-center gap-1.5">
+                        <Star size={14} className="text-[#C5A059]" />
+                        <span className="text-sm font-medium text-[#0A1F30]">{trainer.experience_yrs} Cycles</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {trainer.specialization?.map((spec, idx) => (
-                          <Badge key={idx} variant="outline" className="border-white/10 bg-white/5 rounded-none uppercase text-[8px] font-black tracking-widest px-2 py-0.5 text-white/60">
+                          <Badge key={idx} variant="secondary" className="bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium px-2 py-0.5">
                             {spec}
                           </Badge>
                         ))}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right pr-8">
-                      <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gold hover:text-black rounded-none">
+                    <TableCell className="text-right pr-6">
+                      <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-[#0A1F30] hover:bg-gray-100 rounded-lg">
                         <ChevronRight size={16} />
                       </Button>
                     </TableCell>

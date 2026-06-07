@@ -91,8 +91,8 @@ export function StaggerItem({ children, className = "" }) {
 export function GlowCard({ children, className = "", glowColor = "gold", noPadding = false }) {
   const [delay] = useState(() => Math.random() * 3)
   const glowMap = {
-    gold: "group-hover:shadow-[0_0_30px_rgba(214,184,106,0.12)]",
-    blue: "group-hover:shadow-[0_0_30px_rgba(59,130,246,0.12)]",
+    gold: "group-hover:shadow-[0_0_30px_rgba(197,160,89,0.12)]",
+    blue: "group-hover:shadow-[0_0_30px_rgba(27,48,34,0.12)]",
     green: "group-hover:shadow-[0_0_30px_rgba(34,197,94,0.12)]",
     red: "group-hover:shadow-[0_0_30px_rgba(239,68,68,0.12)]",
   }
@@ -101,7 +101,7 @@ export function GlowCard({ children, className = "", glowColor = "gold", noPaddi
     <motion.div
       whileHover={{ y: -4, scale: 1.005 }}
       transition={EASE.springSnappy}
-      className={`relative group overflow-hidden border border-white/[0.08] bg-[#1B2230]/60 backdrop-blur-xl rounded-none transition-shadow duration-500 ${glowMap[glowColor] || glowMap.gold} ${className}`}
+      className={`relative group overflow-hidden border border-border bg-card/60 backdrop-blur-xl rounded-none transition-shadow duration-500 ${glowMap[glowColor] || glowMap.gold} ${className}`}
     >
       {/* Ambient top glow line */}
       <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
@@ -165,7 +165,7 @@ export function PageTransition({ children, className = "" }) {
 // ═══════════════════════════════════════════
 export function GlassPanel({ children, className = "" }) {
   return (
-    <div className={`bg-[#1B2230]/50 backdrop-blur-2xl border border-white/[0.08] rounded-none relative overflow-hidden ${className}`}>
+    <div className={`bg-card/50 backdrop-blur-2xl border border-border rounded-none relative overflow-hidden ${className}`}>
       <div className="absolute inset-0 grid-overlay-dense opacity-20 pointer-events-none" />
       <div className="relative z-10">{children}</div>
     </div>
@@ -177,8 +177,8 @@ export function GlassPanel({ children, className = "" }) {
 // ═══════════════════════════════════════════
 export function FloatingGlow({ color = "gold", size = 300, className = "" }) {
   const colorMap = {
-    gold: "bg-[#D6B86A]",
-    blue: "bg-blue-500",
+    gold: "bg-[#C5A059]",
+    blue: "bg-[#1B3022]",
     purple: "bg-purple-500",
   }
   
@@ -241,7 +241,7 @@ export function PageHeader({ subtitle, title, highlightedTitle, children }) {
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center gap-3 mb-2"
         >
-          <div className="w-2 h-2 rounded-full bg-gold animate-pulse shadow-[0_0_10px_rgba(214,184,106,0.5)]" />
+          <div className="w-2 h-2 rounded-full bg-gold animate-pulse shadow-[0_0_10px_rgba(197,160,89,0.5)]" />
           <h2 className="text-gold text-[10px] tracking-[0.5em] uppercase font-black">
             {subtitle}
           </h2>

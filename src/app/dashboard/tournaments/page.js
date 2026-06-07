@@ -1,11 +1,15 @@
 "use client"
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Trophy, Plus, ChevronRight, X, Shuffle, Users, ShieldCheck, Target, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { supabase } from '@/lib/supabase'
+import { useBranch } from '@/context/BranchContext'
+import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { useForm } from "react-hook-form"
 
 // ── Weight categories (standard karate) ──
 const WEIGHT_CATS = {
@@ -67,15 +71,15 @@ function MatchCard({ match, onWinner, onScore }) {
   if (ao.bye || aka.bye) return null 
 
   return (
-    <div className="bg-white/5 border border-white/10 p-4 min-w-[260px] relative overflow-hidden group">
+    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 min-w-[260px] relative overflow-hidden group">
       <div className="flex justify-between items-center mb-3">
-        <div className="text-[8px] uppercase tracking-[0.3em] text-white/30 font-black">Segment {id}</div>
+        <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Segment {id}</div>
         {!done && (
           <Button 
             variant="ghost" 
             size="xs" 
             onClick={() => onScore(match)}
-            className="h-5 text-[8px] uppercase tracking-widest text-gold hover:text-white hover:bg-gold/20 rounded-none border border-gold/20"
+            className="h-6 text-[10px] uppercase tracking-wider text-[#C5A059] hover:text-[#0A1F30] hover:bg-gray-100 rounded-lg border border-[#C5A059]/20"
           >
             Electronic Scoring
           </Button>
@@ -86,44 +90,44 @@ function MatchCard({ match, onWinner, onScore }) {
       <motion.div
         whileHover={!done ? { x: 5 } : {}}
         onClick={() => !done && onWinner(id, 'ao')}
-        className={`p-3 border mb-2 cursor-pointer transition-all ${
+        className={`p-3 rounded-lg border mb-2 cursor-pointer transition-all ${
           winner === ao 
-          ? "bg-blue-500/20 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.2)]" 
-          : "bg-blue-500/5 border-blue-500/20 grayscale hover:grayscale-0"
+          ? "bg-blue-50 border-blue-200 shadow-sm" 
+          : "bg-white border-gray-200 grayscale hover:grayscale-0"
         }`}
       >
         <div className="flex justify-between items-center">
           <div>
-            <div className="text-[8px] font-black text-blue-400 uppercase tracking-widest mb-1">AO (青)</div>
-            <div className="text-sm font-bold uppercase tracking-tight">{ao.player?.name}</div>
+            <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">AO (青)</div>
+            <div className="text-sm font-semibold text-[#0A1F30] truncate max-w-[140px]">{ao.player?.name || ao.player?.users?.full_name}</div>
           </div>
           <div className="flex items-center gap-3">
-            {match.aoScore > 0 && <span className="text-xl font-black text-blue-400">{match.aoScore}</span>}
-            {winner === ao && <Trophy size={14} className="text-blue-400" />}
+            {match.aoScore > 0 && <span className="text-xl font-bold text-blue-600">{match.aoScore}</span>}
+            {winner === ao && <Trophy size={14} className="text-blue-600" />}
           </div>
         </div>
       </motion.div>
 
-      <div className="text-center text-[10px] font-black text-white/10 my-2 tracking-[0.5em]">VS</div>
+      <div className="text-center text-[10px] font-bold text-gray-300 my-2 tracking-[0.2em]">VS</div>
 
       {/* AKA - Red */}
       <motion.div
         whileHover={!done ? { x: 5 } : {}}
         onClick={() => !done && onWinner(id, 'aka')}
-        className={`p-3 border transition-all ${
+        className={`p-3 rounded-lg border transition-all ${
           winner === aka 
-          ? "bg-red-500/20 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]" 
-          : "bg-red-500/5 border-red-500/20 grayscale hover:grayscale-0"
+          ? "bg-red-50 border-red-200 shadow-sm" 
+          : "bg-white border-gray-200 grayscale hover:grayscale-0"
         }`}
       >
         <div className="flex justify-between items-center">
           <div>
-            <div className="text-[8px] font-black text-red-400 uppercase tracking-widest mb-1">AKA (赤)</div>
-            <div className="text-sm font-bold uppercase tracking-tight">{aka.player?.name}</div>
+            <div className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">AKA (赤)</div>
+            <div className="text-sm font-semibold text-[#0A1F30] truncate max-w-[140px]">{aka.player?.name || aka.player?.users?.full_name}</div>
           </div>
           <div className="flex items-center gap-3">
-            {match.akaScore > 0 && <span className="text-xl font-black text-red-400">{match.akaScore}</span>}
-            {winner === aka && <Trophy size={14} className="text-red-400" />}
+            {match.akaScore > 0 && <span className="text-xl font-bold text-red-600">{match.akaScore}</span>}
+            {winner === aka && <Trophy size={14} className="text-red-600" />}
           </div>
         </div>
       </motion.div>
@@ -139,27 +143,27 @@ function ScoringModal({ match, onClose, onSave }) {
     <motion.div 
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4"
     >
-      <Card className="bg-black border-gold/30 w-full max-w-2xl rounded-none overflow-hidden shadow-[0_0_50px_rgba(214,184,106,0.15)]">
+      <Card className="bg-white border-gray-200 w-full max-w-2xl rounded-2xl overflow-hidden shadow-xl">
         <div className="grid grid-cols-2 h-[400px]">
           {/* AO Scoring */}
           <div className="bg-blue-600 flex flex-col items-center justify-center space-y-8 p-8 relative">
-            <div className="text-xs font-black uppercase tracking-[0.4em] text-white/50 absolute top-8">AO (Blue) Points</div>
-            <div className="text-[120px] font-black text-white leading-none">{aoScore}</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-white/80 absolute top-8">AO (Blue) Points</div>
+            <div className="text-[120px] font-bold text-white leading-none">{aoScore}</div>
             <div className="grid grid-cols-3 gap-2 w-full">
               {[1, 2, 3].map(v => (
                 <button 
                   key={v}
                   onClick={() => setAoScore(s => s + v)}
-                  className="h-16 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-xl transition-colors"
+                  className="h-16 bg-white/20 hover:bg-white/30 rounded-lg border border-white/30 text-white font-bold text-xl transition-colors"
                 >
                   +{v}
                 </button>
               ))}
               <button 
                 onClick={() => setAoScore(s => Math.max(0, s - 1))}
-                className="h-16 col-span-3 bg-black/20 hover:bg-black/30 text-white/60 font-bold uppercase tracking-widest text-[10px]"
+                className="h-12 col-span-3 bg-black/20 hover:bg-black/30 rounded-lg text-white/80 font-bold uppercase tracking-wider text-[10px]"
               >
                 Correction (-1)
               </button>
@@ -168,21 +172,21 @@ function ScoringModal({ match, onClose, onSave }) {
           
           {/* AKA Scoring */}
           <div className="bg-red-600 flex flex-col items-center justify-center space-y-8 p-8 relative">
-            <div className="text-xs font-black uppercase tracking-[0.4em] text-white/50 absolute top-8">AKA (Red) Points</div>
-            <div className="text-[120px] font-black text-white leading-none">{akaScore}</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-white/80 absolute top-8">AKA (Red) Points</div>
+            <div className="text-[120px] font-bold text-white leading-none">{akaScore}</div>
             <div className="grid grid-cols-3 gap-2 w-full">
               {[1, 2, 3].map(v => (
                 <button 
                   key={v}
                   onClick={() => setAkaScore(s => s + v)}
-                  className="h-16 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-xl transition-colors"
+                  className="h-16 bg-white/20 hover:bg-white/30 rounded-lg border border-white/30 text-white font-bold text-xl transition-colors"
                 >
                   +{v}
                 </button>
               ))}
               <button 
                 onClick={() => setAkaScore(s => Math.max(0, s - 1))}
-                className="h-16 col-span-3 bg-black/20 hover:bg-black/30 text-white/60 font-bold uppercase tracking-widest text-[10px]"
+                className="h-12 col-span-3 bg-black/20 hover:bg-black/30 rounded-lg text-white/80 font-bold uppercase tracking-wider text-[10px]"
               >
                 Correction (-1)
               </button>
@@ -190,16 +194,16 @@ function ScoringModal({ match, onClose, onSave }) {
           </div>
         </div>
         
-        <div className="flex border-t border-white/10 h-16">
+        <div className="flex border-t border-gray-100 h-16">
           <button 
             onClick={onClose}
-            className="flex-1 bg-white/5 hover:bg-white/10 text-white/40 uppercase tracking-widest text-[10px] font-bold border-r border-white/10"
+            className="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-500 uppercase tracking-wider text-xs font-bold border-r border-gray-200"
           >
             Abort Session
           </button>
           <button 
             onClick={() => onSave(match.id, aoScore, akaScore)}
-            className="flex-1 bg-gold hover:bg-gold-dark text-black uppercase tracking-widest text-[10px] font-black"
+            className="flex-1 bg-[#C5A059] hover:bg-[#C5A059]/90 text-white uppercase tracking-wider text-xs font-bold"
           >
             Confirm Scores & Sync
           </button>
@@ -254,21 +258,21 @@ function CategoryBracket({ category, onClose }) {
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl p-8 overflow-auto"
+      className="fixed inset-0 z-50 bg-white/95 backdrop-blur-xl p-8 overflow-auto"
     >
       <div className="max-w-7xl mx-auto space-y-12">
-        <header className="flex justify-between items-center border-b border-white/10 pb-8">
+        <header className="flex justify-between items-center border-b border-gray-200 pb-8">
           <div>
-            <h2 className="text-gold text-sm tracking-[0.4em] uppercase font-bold mb-2">Live Tournament</h2>
-            <h1 className="text-4xl font-bold uppercase tracking-tighter">
-              {category.ageLabel} <span className="text-gold italic">/</span> {category.weightLabel}
+            <h2 className="text-gray-500 text-sm tracking-widest uppercase font-bold mb-2">Live Tournament</h2>
+            <h1 className="text-3xl font-heading font-bold text-[#0A1F30] uppercase">
+              {category.ageLabel} <span className="text-gray-300 mx-2">/</span> {category.weightLabel}
             </h1>
           </div>
           <div className="flex gap-4">
-            <Button variant="outline" className="border-white/10 hover:bg-white/5 uppercase tracking-widest text-[10px] rounded-none px-6" onClick={() => setRounds(buildBracket(category.players))}>
+            <Button variant="outline" className="border-gray-200 text-gray-600 hover:bg-gray-50 uppercase tracking-wider text-[10px] rounded-lg px-6" onClick={() => setRounds(buildBracket(category.players))}>
               <Shuffle size={14} className="mr-2" /> Re-Seed
             </Button>
-            <Button variant="ghost" className="text-white/40 hover:text-white" onClick={onClose}>
+            <Button variant="ghost" className="text-gray-400 hover:text-gray-600" onClick={onClose}>
               <X size={24} />
             </Button>
           </div>
@@ -278,16 +282,16 @@ function CategoryBracket({ category, onClose }) {
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-gold p-8 flex items-center gap-8 text-black relative overflow-hidden"
+            className="bg-[#C5A059]/10 border border-[#C5A059]/20 rounded-2xl p-8 flex items-center gap-8 text-[#0A1F30] relative overflow-hidden"
           >
-            <div className="absolute right-0 top-0 p-4 opacity-10">
+            <div className="absolute right-0 top-0 p-4 opacity-5 text-[#C5A059]">
               <Trophy size={160} />
             </div>
-            <Trophy size={64} className="drop-shadow-2xl" />
+            <Trophy size={64} className="text-[#C5A059] drop-shadow-md" />
             <div>
-              <p className="text-[10px] uppercase tracking-[0.5em] font-black mb-1">Grand Champion</p>
-              <h2 className="text-5xl font-black uppercase tracking-tighter">{champion.name}</h2>
-              <p className="text-sm font-bold opacity-60 uppercase tracking-widest mt-1">{champion.branch}</p>
+              <p className="text-[10px] uppercase tracking-widest text-[#C5A059] font-bold mb-1">Grand Champion</p>
+              <h2 className="text-3xl font-heading font-bold uppercase">{champion.name || champion.users?.full_name}</h2>
+              <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider mt-1">{champion.branch || champion.branches?.name}</p>
             </div>
           </motion.div>
         )}
@@ -298,8 +302,8 @@ function CategoryBracket({ category, onClose }) {
             if (visibleMatches.length === 0 && ri > 0) return null
             return (
               <div key={ri} className="flex-shrink-0 space-y-8">
-                <div className="text-center py-2 bg-white/5 border border-white/10">
-                  <p className="text-[10px] uppercase tracking-[0.4em] font-bold text-gold">
+                <div className="text-center py-2 bg-gray-50 rounded-lg border border-gray-100">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500">
                     {ri === rounds.length - 1 ? "FINALS" : ri === rounds.length - 2 ? "SEMI-FINALS" : `ROUND ${ri + 1}`}
                   </p>
                 </div>
@@ -328,105 +332,196 @@ function CategoryBracket({ category, onClose }) {
 }
 
 export default function TournamentPage() {
+  const [tournaments, setTournaments] = useState([])
+  const [selectedTournament, setSelectedTournament] = useState(null)
+  const [participants, setParticipants] = useState([])
+  const { branches } = useBranch()
+  
   const [selectedAge, setSelectedAge] = useState('Junior (14-17)')
   const [selectedWeight, setSelectedWeight] = useState('40-45kg')
-  const [athletes, setAthletes] = useState([])
   const [activeCat, setActiveCat] = useState(null)
   const [loading, setLoading] = useState(true)
   const [role, setRole] = useState(null)
 
-  async function fetchRole() {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      const { data } = await supabase.from('users').select('role').eq('id', session.user.id).single()
-      setRole(data?.role || 'student')
-    }
-  }
+  const [openCreate, setOpenCreate] = useState(false)
+  const { register, handleSubmit, reset } = useForm()
 
-  async function fetchAthletes() {
+  useEffect(() => {
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        const { data } = await supabase.from('users').select('role').eq('id', session.user.id).single()
+        setRole(data?.role || 'student')
+      }
+      await fetchTournaments()
+    }
+    init()
+  }, [])
+
+  async function fetchTournaments() {
     setLoading(true)
-    const { data } = await supabase.from('students').select('*, users(*), branches(name), belt_levels(name)')
+    const { data } = await supabase.from('tournaments').select('*, branches(name)').order('event_date', { ascending: false })
     if (data) {
-      setAthletes(data.map(s => ({
-        id: s.id,
-        name: s.users?.full_name,
-        age: 15, // Mock age if not in DB
-        weight: 42, // Mock weight if not in DB
-        branch: s.branches?.name,
-        belt: s.belt_levels?.name || 'White'
-      })))
+      setTournaments(data)
+      if (data.length > 0 && !selectedTournament) {
+        setSelectedTournament(data[0].id)
+      }
     }
     setLoading(false)
   }
 
   useEffect(() => {
-    async function loadTournamentData() {
-      await fetchAthletes()
-      await fetchRole()
+    if (selectedTournament) fetchParticipants()
+  }, [selectedTournament])
+
+  async function fetchParticipants() {
+    const { data } = await supabase
+      .from('tournament_participants')
+      .select('*, students(*, users(full_name), branches(name), belt_levels(name))')
+      .eq('tournament_id', selectedTournament)
+    if (data) {
+      setParticipants(data)
     }
+  }
 
-    loadTournamentData()
-  }, [])
+  const onCreateTournament = async (data) => {
+    const toastId = toast.loading("Creating tournament...")
+    try {
+      const { error } = await supabase.from('tournaments').insert([{
+        title: data.title,
+        event_date: data.eventDate,
+        location: data.location,
+        branch_id: data.branchId || null,
+        description: data.description
+      }])
+      if (error) throw error
+      toast.success("Tournament created", { id: toastId })
+      setOpenCreate(false)
+      reset()
+      fetchTournaments()
+    } catch (e) {
+      toast.error(e.message, { id: toastId })
+    }
+  }
 
-  const matchedAthletes = athletes // In a real app, filter by age/weight logic
+  // Determine eligible athletes for the selected age/weight
+  // For demo, we just use the participants registered to this tournament
+  const matchedAthletes = participants.map(p => p.students)
   const canManage = role === 'admin' || role === 'trainer'
 
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className="space-y-8 pb-20">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-2 h-2 rounded-full bg-gold animate-pulse shadow-[0_0_10px_rgba(214,184,106,0.5)]" />
-            <h2 className="text-gold text-[10px] tracking-[0.5em] uppercase font-black">Championships</h2>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-none">Tournament <span className="text-gold italic outline-text">Matrix</span></h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#0A1F30] sm:text-3xl">
+            Tournament Matrix
+          </h1>
+          <p className="mt-1 font-sans text-sm text-gray-500">
+            Generate and manage tournament brackets
+          </p>
         </div>
         {canManage && (
-          <Button className="bg-gold text-black hover:bg-gold-dark font-bold uppercase tracking-widest px-8 h-12 rounded-none">
-            <Trophy className="mr-2" size={18} /> New Tournament
+          <>
+          <Button onClick={() => setOpenCreate(true)} className="bg-[#0A1F30] hover:bg-[#0A1F30]/90 text-white rounded-lg text-xs font-semibold">
+            <Plus className="mr-2" size={16} /> New Tournament
           </Button>
+          <Dialog open={openCreate} onOpenChange={setOpenCreate}>
+            <DialogContent className="bg-white border border-gray-200 rounded-2xl max-w-md p-0 overflow-hidden">
+              <DialogHeader className="p-6 border-b border-gray-100">
+                <DialogTitle className="text-lg font-heading font-bold text-[#0A1F30]">Create Tournament</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit(onCreateTournament)} className="p-6 space-y-5">
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Tournament Title</label>
+                  <Input {...register("title", { required: true })} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Event Date</label>
+                    <Input type="date" {...register("eventDate", { required: true })} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Host Branch</label>
+                    <select {...register("branchId")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                      <option value="">No specific branch</option>
+                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Location / Address</label>
+                  <Input {...register("location", { required: true })} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Description</label>
+                  <Input {...register("description")} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setOpenCreate(false)} className="flex-1 rounded-lg border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</Button>
+                  <Button type="submit" className="flex-1 bg-[#C5A059] hover:bg-[#C5A059]/90 text-white rounded-lg">Create</Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+          </>
         )}
       </header>
 
+      {tournaments.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+          {tournaments.map(t => (
+            <Button 
+              key={t.id} 
+              variant={selectedTournament === t.id ? "default" : "outline"}
+              onClick={() => setSelectedTournament(t.id)}
+              className={selectedTournament === t.id ? "bg-[#0A1F30] text-white" : "text-gray-500"}
+            >
+              {t.title}
+            </Button>
+          ))}
+        </div>
+      )}
+
       <div className={`grid grid-cols-1 ${canManage ? 'lg:grid-cols-3' : 'lg:grid-cols-1'} gap-8`}>
         {canManage && (
-          <Card className="bg-[#1B2230]/60 border-white/[0.06] backdrop-blur-xl rounded-none lg:col-span-1">
-            <CardHeader className="border-b border-white/5">
-              <CardTitle className="text-xs uppercase tracking-[0.3em] text-gold font-black">Bracket Logic</CardTitle>
+          <Card className="rounded-2xl border border-gray-100 bg-white shadow-sm lg:col-span-1">
+            <CardHeader className="border-b border-gray-100 p-6">
+              <CardTitle className="text-sm uppercase tracking-wider text-[#0A1F30] font-bold">Bracket Logic</CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
               <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase tracking-widest text-white/40">Division (Age)</label>
-                  <select className="w-full bg-white/5 border border-white/10 h-12 px-4 text-xs font-bold uppercase tracking-widest text-white outline-none focus:border-gold/50">
-                    {Object.keys(AGE_CATS).map(a => <option key={a} value={a} className="bg-black">{a}</option>)}
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Division (Age)</label>
+                  <select value={selectedAge} onChange={e => setSelectedAge(e.target.value)} className="w-full bg-gray-50 border border-gray-200 h-10 px-4 rounded-lg text-sm text-[#0A1F30] outline-none focus:border-[#C5A059] focus:ring-2 focus:ring-[#C5A059]/10">
+                    {Object.keys(AGE_CATS).map(a => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase tracking-widest text-white/40">Classification (Weight)</label>
-                  <select className="w-full bg-white/5 border border-white/10 h-12 px-4 text-xs font-bold uppercase tracking-widest text-white outline-none focus:border-gold/50">
-                    {Object.keys(WEIGHT_CATS).map(w => <option key={w} value={w} className="bg-black">{w}</option>)}
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Classification (Weight)</label>
+                  <select value={selectedWeight} onChange={e => setSelectedWeight(e.target.value)} className="w-full bg-gray-50 border border-gray-200 h-10 px-4 rounded-lg text-sm text-[#0A1F30] outline-none focus:border-[#C5A059] focus:ring-2 focus:ring-[#C5A059]/10">
+                    {Object.keys(WEIGHT_CATS).map(w => <option key={w} value={w}>{w}</option>)}
                   </select>
                 </div>
               </div>
               
-              <div className="p-4 bg-gold/5 border border-gold/20 space-y-3">
-                <div className="flex items-center gap-2 text-gold">
+              <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-emerald-700">
                   <Target size={14} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Matched Athletes: {matchedAthletes.length}</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">Registered Athletes: {matchedAthletes.length}</span>
                 </div>
-                <p className="text-[10px] text-white/40 uppercase tracking-widest leading-relaxed">
+                <p className="text-[11px] text-emerald-600/80 uppercase tracking-wider leading-relaxed">
                   System will auto-generate a single-elimination bracket with random seeding.
                 </p>
               </div>
 
               <Button 
-                className="w-full bg-gold text-black hover:bg-gold-dark font-black uppercase tracking-widest h-14 rounded-none glow-gold"
+                className="w-full bg-[#C5A059] hover:bg-[#C5A059]/90 text-white rounded-lg h-10 font-semibold"
+                disabled={matchedAthletes.length === 0}
                 onClick={() => setActiveCat({
                   id: Date.now(),
                   ageLabel: selectedAge,
                   weightLabel: selectedWeight,
-                  players: matchedAthletes.slice(0, 8) // Limit for demo
+                  players: matchedAthletes.slice(0, 16) // Limit for UI
                 })}
               >
                 Generate Bracket
@@ -435,49 +530,34 @@ export default function TournamentPage() {
           </Card>
         )}
 
-        <Card className={`bg-[#1B2230]/60 border-white/[0.06] backdrop-blur-xl rounded-none ${canManage ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
-          <CardHeader className="border-b border-white/5 flex flex-row items-center justify-between">
-            <CardTitle className="text-xs uppercase tracking-[0.3em] text-gold font-black">Qualified Athletes</CardTitle>
+        <Card className={`rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden ${canManage ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
+          <CardHeader className="border-b border-gray-100 p-6 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm uppercase tracking-wider text-[#0A1F30] font-bold">Registered Athletes</CardTitle>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Database Sync Active</span>
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Database Sync Active</span>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-gray-100">
               {matchedAthletes.length === 0 ? (
-                <div className="p-12 text-center text-white/20 uppercase text-[10px] tracking-widest">No qualified athletes found</div>
-              ) : matchedAthletes.slice(0, 10).map((a, i) => (
-                <div key={i} className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+                <div className="p-12 text-center text-gray-400 uppercase text-xs tracking-wider">No athletes registered to this tournament</div>
+              ) : matchedAthletes.map((a, i) => (
+                <div key={i} className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black text-gold">
+                    <div className="w-8 h-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">
                       {i + 1}
                     </div>
                     <div>
-                      <p className="text-sm font-bold uppercase tracking-tight">{a.name}</p>
-                      <p className="text-[10px] text-white/40 uppercase tracking-widest">{a.branch}</p>
+                      <p className="text-sm font-semibold text-[#0A1F30]">{a.users?.full_name}</p>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">{a.branches?.name}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs font-bold text-gold uppercase">{a.belt} Belt</p>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest">Rank #12</p>
+                    <p className="text-xs font-bold text-[#C5A059] uppercase">{a.belt_levels?.name} Belt</p>
                   </div>
                 </div>
               ))}
-            </div>
-            <div className="p-4 border-t border-white/5 text-center">
-              <Button 
-                variant="ghost" 
-                className="text-[10px] uppercase tracking-widest text-white/40 hover:text-white"
-                onClick={() => canManage && setActiveCat({
-                  id: Date.now(),
-                  ageLabel: selectedAge,
-                  weightLabel: selectedWeight,
-                  players: matchedAthletes.slice(0, 8)
-                })}
-              >
-                {canManage ? "Open Bracket Preview" : "View Bracket Information"} <ChevronRight size={14} className="ml-2" />
-              </Button>
             </div>
           </CardContent>
         </Card>

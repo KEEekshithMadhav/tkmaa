@@ -8,9 +8,9 @@ function generateParticles(count) {
   const sizes = new Float32Array(count)
   const colors = new Float32Array(count * 3)
   
-  const goldColor = new THREE.Color('#D6B86A')
+  const goldColor = new THREE.Color('#C5A059')
   const whiteColor = new THREE.Color('#ffffff')
-  const blueColor = new THREE.Color('#4a90d9')
+  const greenColor = new THREE.Color('#1B3022')
   
   for (let i = 0; i < count; i++) {
     // Distribute in a spherical volume with more density at center
@@ -25,12 +25,12 @@ function generateParticles(count) {
     // Varied sizes for depth
     sizes[i] = Math.random() * 0.03 + 0.005
     
-    // Mostly gold with some white and blue accents
+    // Mostly gold with some white and green accents
     const r = Math.random()
     let color
     if (r < 0.6) color = goldColor
     else if (r < 0.85) color = whiteColor
-    else color = blueColor
+    else color = greenColor
     
     colors[i * 3] = color.r
     colors[i * 3 + 1] = color.g
@@ -119,7 +119,7 @@ function FogParticles({ count = 800 }) {
       </bufferGeometry>
       <pointsMaterial
         size={0.04}
-        color="#D6B86A"
+        color="#C5A059"
         transparent
         opacity={0.08}
         sizeAttenuation
@@ -132,7 +132,7 @@ function FogParticles({ count = 800 }) {
 
 export default function ThreeBackground() {
   return (
-    <div className="fixed inset-0 -z-10" style={{ background: 'radial-gradient(ellipse at center, #111827 0%, #0B0F19 100%)' }}>
+    <div className="fixed inset-0 -z-10" style={{ background: 'radial-gradient(ellipse at center, #1b3022 0%, #0A1F30 100%)' }}>
       <Canvas 
         camera={{ position: [0, 0, 6], fov: 75 }}
         gl={{ antialias: false, alpha: true }}
@@ -141,7 +141,7 @@ export default function ThreeBackground() {
       >
         <Particles />
         <FogParticles />
-        <fog attach="fog" args={['#0B0F19', 8, 20]} />
+        <fog attach="fog" args={['#0A1F30', 8, 20]} />
       </Canvas>
     </div>
   )

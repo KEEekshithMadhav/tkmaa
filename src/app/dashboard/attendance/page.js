@@ -12,17 +12,16 @@ import {
   TableRow 
 } from "@/components/ui/table"
 import { Loader2, Calendar, Check, X, Clock } from 'lucide-react'
-import { supabase, getUserRole, getBranches } from '@/lib/supabase'
+import { supabase, getUserRole } from '@/lib/supabase'
+import { useBranch } from '@/context/BranchContext'
 
 export default function AttendancePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(null) // ID of student being saved
   const [role, setRole] = useState(null)
-  const [branches, setBranches] = useState([])
   const [students, setStudents] = useState([])
   const [attendanceRecords, setAttendanceRecords] = useState({}) // student_id -> status
-  
-  const [selectedBranch, setSelectedBranch] = useState('all')
+  const { branches, selectedBranch, setSelectedBranch } = useBranch()
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
 
   async function initData() {
@@ -38,13 +37,9 @@ export default function AttendancePage() {
         .select('branch_id')
         .eq('user_id', session.user.id)
         .single()
-      
       if (trainerData?.branch_id) {
         setSelectedBranch(trainerData.branch_id)
       }
-    } else if (userRole === 'admin') {
-      const { data } = await getBranches()
-      if (data) setBranches(data)
     }
   }
 
@@ -102,7 +97,7 @@ export default function AttendancePage() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       
-      // Since we don't know if there's a unique constraint, let's delete existing record for this date and student
+      // Delete existing record for this date and student
       await supabase
         .from('attendance')
         .delete()
@@ -132,50 +127,41 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-8">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-2 h-2 rounded-full bg-gold animate-pulse shadow-[0_0_10px_rgba(214,184,106,0.5)]" />
-            <h2 className="text-gold text-[10px] tracking-[0.5em] uppercase font-black">Class Registry</h2>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-none">Daily <span className="text-gold italic outline-text">Attendance</span></h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#0A1F30] sm:text-3xl">
+            Daily Attendance
+          </h1>
+          <p className="mt-1 font-sans text-sm text-gray-500">
+            Manage class rosters and record student attendance
+          </p>
         </div>
       </header>
 
       {/* Control Bar */}
       <div className="flex flex-col md:flex-row gap-4">
-        <div className="relative flex-1 group">
-          <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-gold transition-colors" size={18} />
+        <div className="relative flex-1">
+          <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input 
             type="date"
-            className="w-full pl-12 bg-white/5 border border-white/10 focus:border-gold/50 h-12 rounded-none uppercase text-xs tracking-widest transition-all outline-none text-white/80 color-scheme-dark"
+            className="w-full pl-12 bg-white border border-gray-200 focus:border-[#C5A059] focus:ring-1 focus:ring-[#C5A059] h-12 rounded-xl text-sm font-medium transition-all outline-none text-[#0A1F30] shadow-sm"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
           />
         </div>
         
-        {role === 'admin' && (
-          <select 
-            className="bg-white/5 border border-white/10 text-white/60 text-xs tracking-widest uppercase px-6 h-12 outline-none focus:border-gold/50 transition-all"
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-          >
-            <option value="all">ALL BRANCHES</option>
-            {branches.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
-          </select>
-        )}
+        {/* Branch dropdown moved to Sidebar */}
       </div>
 
       {/* Table Section */}
-      <Card className="bg-[#1B2230]/60 border-white/[0.06] backdrop-blur-xl overflow-hidden rounded-none relative">
-        <motion.div initial={{ top: "-5%" }} animate={{ top: "105%" }} transition={{ duration: 5, repeat: Infinity, ease: "linear" }} className="absolute left-0 w-full h-px bg-gradient-to-r from-transparent via-gold/15 to-transparent z-20 pointer-events-none" />
+      <Card className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
         <Table>
-          <TableHeader className="bg-white/5">
-            <TableRow className="border-white/10 hover:bg-transparent">
-              <TableHead className="text-gold uppercase tracking-[0.2em] text-[10px] font-bold py-6">Student</TableHead>
-              <TableHead className="text-gold uppercase tracking-[0.2em] text-[10px] font-bold">Branch</TableHead>
-              <TableHead className="text-gold uppercase tracking-[0.2em] text-[10px] font-bold">Belt</TableHead>
-              <TableHead className="text-gold uppercase tracking-[0.2em] text-[10px] font-bold text-right">Status</TableHead>
+          <TableHeader className="bg-gray-50 border-b border-gray-100">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="text-gray-500 uppercase tracking-wider text-[10px] font-semibold py-4">Student</TableHead>
+              <TableHead className="text-gray-500 uppercase tracking-wider text-[10px] font-semibold">Branch</TableHead>
+              <TableHead className="text-gray-500 uppercase tracking-wider text-[10px] font-semibold">Belt</TableHead>
+              <TableHead className="text-gray-500 uppercase tracking-wider text-[10px] font-semibold text-right">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -183,13 +169,13 @@ export default function AttendancePage() {
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="h-64 text-center">
-                    <Loader2 className="animate-spin text-gold mx-auto mb-4" size={32} />
-                    <span className="text-[10px] uppercase tracking-[0.3em] text-white/40">Loading Roster...</span>
+                    <Loader2 className="animate-spin text-[#C5A059] mx-auto mb-4" size={32} />
+                    <span className="text-xs text-gray-500">Loading Roster...</span>
                   </TableCell>
                 </TableRow>
               ) : students.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-64 text-center text-white/40 text-xs uppercase tracking-widest">
+                  <TableCell colSpan={4} className="h-64 text-center text-gray-500 text-sm">
                     No students found for this branch.
                   </TableCell>
                 </TableRow>
@@ -198,26 +184,26 @@ export default function AttendancePage() {
                 return (
                   <motion.tr
                     key={student.id}
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.03 }}
-                    className="border-white/[0.04] hover:bg-white/[0.03] hover:shadow-[inset_3px_0_0_rgba(214,184,106,0.4)] transition-all duration-300"
+                    transition={{ delay: i * 0.02 }}
+                    className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors"
                   >
-                    <TableCell className="py-5">
+                    <TableCell className="py-4">
                       <div>
-                        <div className="font-bold text-sm tracking-wide uppercase">{student.users?.full_name}</div>
-                        <div className="text-[10px] text-white/40 tracking-widest uppercase mt-1">ID: {student.id.slice(0,8)}</div>
+                        <div className="font-semibold text-sm text-[#0A1F30]">{student.users?.full_name}</div>
+                        <div className="text-[10px] text-gray-400 font-mono mt-0.5">ID: {student.id.slice(0,8)}</div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-[10px] tracking-widest uppercase text-white/60">{student.branches?.name}</span>
+                      <span className="text-xs text-gray-500">{student.branches?.name}</span>
                     </TableCell>
                     <TableCell>
                       <span 
-                        className="px-2 py-1 text-[9px] font-bold uppercase tracking-widest rounded-full"
+                        className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest rounded-full shadow-sm border border-gray-100"
                         style={{ 
                           backgroundColor: student.belt_levels?.hex || '#ffffff', 
-                          color: ['#ffffff', '#FFD700'].includes(student.belt_levels?.hex?.toUpperCase()) ? '#000' : '#fff' 
+                          color: ['#ffffff', '#FFD700', '#F8F9FA'].includes(student.belt_levels?.hex?.toUpperCase()) ? '#0A1F30' : '#ffffff' 
                         }}
                       >
                         {student.belt_levels?.name || 'White'}
@@ -229,37 +215,37 @@ export default function AttendancePage() {
                           onClick={() => markAttendance(student.id, 'present')}
                           disabled={saving === student.id}
                           variant={currentStatus === 'present' ? 'default' : 'outline'}
-                          className={`h-8 w-8 p-0 rounded-none border-white/10 transition-all ${
+                          className={`h-9 w-9 p-0 rounded-lg transition-all ${
                             currentStatus === 'present' 
-                              ? 'bg-green-500/20 text-green-400 border-green-500/50 hover:bg-green-500/30' 
-                              : 'text-white/40 hover:text-green-400 hover:border-green-400/50 hover:bg-green-500/10'
+                              ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600 shadow-sm' 
+                              : 'text-gray-400 border-gray-200 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50'
                           }`}
                         >
-                          <Check size={14} />
+                          <Check size={16} />
                         </Button>
                         <Button 
                           onClick={() => markAttendance(student.id, 'late')}
                           disabled={saving === student.id}
                           variant={currentStatus === 'late' ? 'default' : 'outline'}
-                          className={`h-8 w-8 p-0 rounded-none border-white/10 transition-all ${
+                          className={`h-9 w-9 p-0 rounded-lg transition-all ${
                             currentStatus === 'late' 
-                              ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50 hover:bg-yellow-500/30' 
-                              : 'text-white/40 hover:text-yellow-400 hover:border-yellow-400/50 hover:bg-yellow-500/10'
+                              ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600 shadow-sm' 
+                              : 'text-gray-400 border-gray-200 hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50'
                           }`}
                         >
-                          <Clock size={14} />
+                          <Clock size={16} />
                         </Button>
                         <Button 
                           onClick={() => markAttendance(student.id, 'absent')}
                           disabled={saving === student.id}
                           variant={currentStatus === 'absent' ? 'default' : 'outline'}
-                          className={`h-8 w-8 p-0 rounded-none border-white/10 transition-all ${
+                          className={`h-9 w-9 p-0 rounded-lg transition-all ${
                             currentStatus === 'absent' 
-                              ? 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30' 
-                              : 'text-white/40 hover:text-red-400 hover:border-red-400/50 hover:bg-red-500/10'
+                              ? 'bg-red-500 text-white border-red-500 hover:bg-red-600 shadow-sm' 
+                              : 'text-gray-400 border-gray-200 hover:text-red-600 hover:border-red-200 hover:bg-red-50'
                           }`}
                         >
-                          <X size={14} />
+                          <X size={16} />
                         </Button>
                       </div>
                     </TableCell>

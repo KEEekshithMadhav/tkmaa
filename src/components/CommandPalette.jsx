@@ -87,7 +87,7 @@ export default function CommandPalette() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -20 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="relative w-full max-w-2xl bg-[#1B2230]/95 border border-white/[0.08] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5),0_0_40px_rgba(214,184,106,0.05)] overflow-hidden rounded-none backdrop-blur-2xl"
+            className="relative w-full max-w-2xl bg-[#0A1F30]/95 border border-white/[0.08] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5),0_0_40px_rgba(197,160,89,0.05)] overflow-hidden rounded-none backdrop-blur-2xl"
           >
             {/* Animated top border */}
             <motion.div

@@ -2,127 +2,136 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
+  Dialog, DialogContent, DialogHeader, DialogTitle 
 } from "@/components/ui/dialog"
 import { 
   Search, Plus, Download, Filter, Loader2, 
-  Calendar, User, Users, Mail, Phone, ChevronRight,
-  MoreVertical, Trash2, Edit3, ExternalLink
+  Calendar, Users, Mail, ChevronRight,
+  Trash2, Edit3, Award, CreditCard, User, FileText
 } from 'lucide-react'
-import { useForm } from "react-hook-form"
-import { supabase, getBranches } from '@/lib/supabase'
+import { useForm, useWatch } from "react-hook-form"
+import { supabase } from '@/lib/supabase'
+import { useBranch } from '@/context/BranchContext'
 import { toast } from 'sonner'
 import { Badge } from "@/components/ui/badge"
 
 const BELT_COLORS = {
-  White: 'bg-white text-black',
-  Yellow: 'bg-yellow-400 text-black',
-  Orange: 'bg-orange-500 text-white',
-  Green: 'bg-green-600 text-white',
-  Blue: 'bg-blue-600 text-white',
-  Purple: 'bg-purple-600 text-white',
-  Red: 'bg-red-600 text-white',
-  Brown: 'bg-[#5D4037] text-white',
-  Black: 'bg-black text-white border border-white/20'
+  White: 'bg-white text-gray-800 border-gray-200',
+  Yellow: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  Orange: 'bg-orange-100 text-orange-800 border-orange-200',
+  Green: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  Blue: 'bg-blue-100 text-blue-800 border-blue-200',
+  Purple: 'bg-purple-100 text-purple-800 border-purple-200',
+  Red: 'bg-red-100 text-red-800 border-red-200',
+  Brown: 'bg-amber-100 text-amber-900 border-amber-300',
+  Black: 'bg-gray-900 text-white border-gray-700'
 }
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([])
-  const [branches, setBranches] = useState([])
+  const { branches, selectedBranch } = useBranch()
   const [trainers, setTrainers] = useState([])
   const [beltLevels, setBeltLevels] = useState([])
+  const [batches, setBatches] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedBranch, setSelectedBranch] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [open, setOpen] = useState(false)
+  
+  // Profile state
   const [selectedStudent, setSelectedStudent] = useState(null)
+  const [profileTab, setProfileTab] = useState('details') // details, financials, certificates
   const [payments, setPayments] = useState([])
+  const [certificates, setCertificates] = useState([])
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const { register, handleSubmit, reset, watch } = useForm()
-  // eslint-disable-next-line react-hooks/incompatible-library
+  const { register, handleSubmit, reset, control, setValue, watch } = useForm({
+    defaultValues: {
+      originalFee: 2000,
+      concessionType: 'none',
+      concessionValue: 0
+    }
+  })
   const watchedBranchId = watch("branchId")
+  const watchedFee = watch("originalFee")
+  const watchedConcessionType = watch("concessionType")
+  const watchedConcessionValue = watch("concessionValue")
+
+  // Auto-calculate final fee
+  const finalFee = (() => {
+    let fee = parseFloat(watchedFee) || 0
+    let val = parseFloat(watchedConcessionValue) || 0
+    if (watchedConcessionType === 'none') return fee
+    if (watchedConcessionType === 'percentage') return fee - (fee * (val / 100))
+    if (watchedConcessionType === 'fixed') return Math.max(0, fee - val)
+    if (watchedConcessionType === 'scholarship') return 0
+    if (watchedConcessionType === 'sibling') return fee - (fee * 0.1) // Example fixed 10%
+    return fee
+  })()
 
   useEffect(() => {
     async function initData() {
-      await fetchInitialData()
+      const { data: tData } = await supabase.from('trainers').select('id, branch_id, users(full_name)')
+      if (tData) setTrainers(tData)
+      const { data: beltData } = await supabase.from('belt_levels').select('*').order('order_rank')
+      if (beltData) {
+        // Deduplicate by name
+        const seen = new Set()
+        const unique = beltData.filter(b => {
+          if (seen.has(b.name)) return false
+          seen.add(b.name)
+          return true
+        })
+        setBeltLevels(unique)
+      }
+      const { data: batchData } = await supabase.from('batches').select('*').eq('is_active', true)
+      if (batchData) setBatches(batchData)
     }
     initData()
   }, [])
 
   useEffect(() => {
-    async function loadStudents() {
-      setLoading(true)
-      let query = supabase.from('students').select('*, users(*), branches(name), belt_levels(name, hex), trainers(users(full_name))')
-      if (selectedBranch !== 'all') query = query.eq('branch_id', selectedBranch)
-      const { data } = await query
-      if (data) setStudents(data)
-      setLoading(false)
-    }
-
-    loadStudents()
+    fetchStudents()
   }, [selectedBranch])
-
-  async function fetchInitialData() {
-    const { data: bData } = await getBranches()
-    if (bData) setBranches(bData)
-    const { data: tData } = await supabase.from('trainers').select('id, branch_id, users(full_name)')
-    if (tData) setTrainers(tData)
-    const { data: beltData } = await supabase.from('belt_levels').select('*').order('order_rank')
-    if (beltData) setBeltLevels(beltData)
-  }
 
   async function fetchStudents() {
     setLoading(true)
-    let query = supabase.from('students').select('*, users(*), branches(name), belt_levels(name, hex), trainers(users(full_name))')
+    let query = supabase.from('students').select('*, users(*), branches(name), belt_levels(name, hex), trainers(users(full_name)), batches(batch_name)')
     if (selectedBranch !== 'all') query = query.eq('branch_id', selectedBranch)
     const { data } = await query
     if (data) setStudents(data)
     setLoading(false)
   }
 
-  async function fetchStudentPayments(studentId) {
-    const { data } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('student_id', studentId)
-      .order('created_at', { ascending: false })
-    if (data) setPayments(data)
+  async function fetchStudentData(studentId) {
+    const { data: pData } = await supabase.from('payments').select('*').eq('student_id', studentId).order('created_at', { ascending: false })
+    if (pData) setPayments(pData)
+    
+    const { data: cData } = await supabase.from('certificates').select('*').eq('student_id', studentId).order('issued_date', { ascending: false })
+    if (cData) setCertificates(cData)
   }
 
   const handleViewProfile = (student) => {
     setSelectedStudent(student)
-    fetchStudentPayments(student.id)
+    setProfileTab('details')
+    fetchStudentData(student.id)
   }
 
   const handleDeleteStudent = async (studentId, userId) => {
     if (!confirm('Are you sure you want to remove this student? This will delete their profile and user account.')) return
-    
     setIsDeleting(true)
     const toastId = toast.loading('Removing student...')
     try {
       const { error: sErr } = await supabase.from('students').delete().eq('id', studentId)
       if (sErr) throw sErr
-      
       const { error: uErr } = await supabase.from('users').delete().eq('id', userId)
       if (uErr) throw uErr
-
       toast.success('Student removed successfully', { id: toastId })
       setSelectedStudent(null)
       fetchStudents()
@@ -135,39 +144,62 @@ export default function StudentsPage() {
 
   const onSubmit = async (formData) => {
     setIsSubmitting(true)
-    const toastId = toast.loading('Adding new student...')
+    const toastId = toast.loading('Registering student...')
     try {
+      // Generate email if not provided
+      const email = formData.email?.trim() || `${formData.fullName.toLowerCase().replace(/\s+/g, '.')}.${Date.now()}@tkmaa.local`
+
+      // Check if email already exists
+      const { data: existingUser } = await supabase.from('users').select('id').eq('email', email).maybeSingle()
+      if (existingUser) throw new Error('A user with this email already exists. Please use a different email.')
+
       const tempId = crypto.randomUUID()
-      const { error: userError } = await supabase
-        .from('users')
-        .insert([{
-          id: tempId,
-          clerk_id: tempId,
-          email: formData.email,
-          full_name: formData.fullName,
-          phone: formData.parentMobile,
-          role: 'student'
-        }])
-        
+      // 1. Create User — the DB trigger `handle_new_user_role` auto-creates a student record
+      const { error: userError } = await supabase.from('users').insert([{
+        id: tempId,
+        clerk_id: tempId,
+        email: email,
+        full_name: formData.fullName,
+        phone: formData.parentMobile,
+        role: 'student'
+      }])
       if (userError) throw userError
 
-      const { error: studentError } = await supabase
-        .from('students')
-        .insert([{
-          user_id: tempId,
+      // 2. UPDATE the trigger-created student record with full details
+      const { data: updatedStudent, error: studentError } = await supabase.from('students')
+        .update({
           branch_id: formData.branchId,
           trainer_id: formData.trainerId || null,
-          belt_level_id: formData.beltLevelId || null,
+          batch_id: formData.batchId || null,
+          belt_level_id: (formData.beltLevelId && formData.beltLevelId !== 'fresher') ? formData.beltLevelId : null,
           dob: formData.dob || null,
           gender: formData.gender,
+          weight: formData.weight ? parseFloat(formData.weight) : null,
           parent_name: formData.parentName,
           parent_phone: formData.parentMobile,
           join_date: new Date().toISOString().split('T')[0]
+        })
+        .eq('user_id', tempId)
+        .select()
+        .single()
+      if (studentError) {
+        // Cleanup: remove the user we just created if student update fails
+        await supabase.from('users').delete().eq('id', tempId)
+        throw studentError
+      }
+
+      // 3. Create Concession if applicable
+      if (formData.concessionType !== 'none') {
+        await supabase.from('concessions').insert([{
+          student_id: updatedStudent.id,
+          concession_type: formData.concessionType,
+          concession_value: parseFloat(formData.concessionValue) || 0,
+          final_fee: finalFee,
+          reason: formData.concessionReason || 'Registration fee concession'
         }])
+      }
 
-      if (studentError) throw studentError
-
-      toast.success('Student added successfully', { id: toastId })
+      toast.success('Student registered successfully', { id: toastId })
       setOpen(false)
       reset()
       fetchStudents()
@@ -180,136 +212,201 @@ export default function StudentsPage() {
 
   const filteredStudents = students.filter(s => 
     s.users?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.belt_levels?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    s.belt_levels?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.member_id && s.member_id.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
   const exportCSV = () => {
-    const headers = ['Student Name', 'DOB', 'Gender', 'Parent Name', 'Parent Mobile', 'Branch', 'Join Date']
+    const headers = ['Member ID', 'Student Name', 'DOB', 'Gender', 'Parent Name', 'Parent Mobile', 'Branch', 'Batch', 'Join Date']
     const csvData = students.map(s => [
+      s.member_id || '',
       s.users?.full_name || '',
-      s.dob || '',
+      s.dob ? new Date(s.dob).toLocaleDateString('en-IN') : '',
       s.gender || '',
       s.parent_name || '',
-      s.parent_phone || '',
+      s.parent_phone ? `="${s.parent_phone}"` : '',
       s.branches?.name || '',
-      s.join_date ? new Date(s.join_date).toLocaleDateString() : ''
+      s.batches?.batch_name || '',
+      s.join_date ? new Date(s.join_date).toLocaleDateString('en-IN') : ''
     ])
     
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const csvContent = [headers.join(','), ...csvData.map(row => row.map(cell => {
+      // Don't double-quote cells that already have ="..." format
+      if (typeof cell === 'string' && cell.startsWith('="')) return cell
+      return `"${cell}"`
+    }).join(','))].join('\n')
+    // Add BOM for proper Unicode in Excel
+    const bom = '\uFEFF'
+    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', 'tkmaa_students.csv')
-    link.style.visibility = 'hidden'
+    link.href = URL.createObjectURL(blob)
+    link.download = `tkmaa_students_${new Date().toISOString().split('T')[0]}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     toast.success('Registry exported to CSV')
   }
 
+  const issueCertificate = async () => {
+    const title = prompt("Enter certificate title (e.g., Yellow Belt Completion)")
+    if (!title || !selectedStudent) return
+    const toastId = toast.loading('Generating certificate...')
+    const { error } = await supabase.from('certificates').insert([{
+      student_id: selectedStudent.id,
+      title: title,
+      certificate_url: 'https://tkmaa.com/certs/placeholder.pdf'
+    }])
+    if (!error) {
+      toast.success('Certificate issued', { id: toastId })
+      fetchStudentData(selectedStudent.id)
+    } else {
+      toast.error('Failed to issue', { id: toastId })
+    }
+  }
+
   return (
     <div className="space-y-8 pb-20">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-3 mb-2"
-          >
-            <div className="w-2 h-2 rounded-full bg-gold animate-pulse shadow-[0_0_10px_rgba(214,184,106,0.5)]" />
-            <h2 className="text-gold text-[10px] tracking-[0.5em] uppercase font-black">
-              Personnel Registry
-            </h2>
-          </motion.div>
-          <motion.h1 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-none"
-          >
-            Academy <span className="text-gold italic outline-text">Students</span>
-          </motion.h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#0A1F30] sm:text-3xl">
+            Academy Students
+          </h1>
+          <p className="mt-1 font-sans text-sm text-gray-500">
+            Manage student registry, profiles, batches, and concessions
+          </p>
         </div>
-        <div className="flex gap-4">
-          <Button onClick={exportCSV} variant="outline" className="border-white/10 text-white/40 hover:text-white hover:bg-white/5 uppercase tracking-[0.3em] text-[9px] font-black h-12 rounded-none px-8 transition-all">
+        <div className="flex gap-2">
+          <Button onClick={exportCSV} variant="outline" className="rounded-lg text-xs">
             <Download className="mr-2" size={14} /> Export
           </Button>
           
+          <Button onClick={() => setOpen(true)} className="bg-[#0A1F30] hover:bg-[#0A1F30]/90 text-white rounded-lg text-xs">
+            <Plus className="mr-2" size={16} /> Add Student
+          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-gold text-black hover:bg-gold/90 font-black uppercase tracking-[0.2em] text-[10px] px-8 h-12 rounded-none glow-gold transition-all">
-                <Plus className="mr-2" size={16} /> Add Student
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-[#1B2230] border-white/10 backdrop-blur-2xl text-white rounded-none max-w-2xl p-0 overflow-hidden">
-              <DialogHeader className="p-8 bg-white/5 border-b border-white/5">
-                <DialogTitle className="text-xl font-black uppercase tracking-widest text-gold">Register New Trainee</DialogTitle>
+            <DialogContent className="bg-white border border-gray-200 rounded-2xl max-w-4xl p-0 overflow-y-auto max-h-[90vh]">
+              <DialogHeader className="p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
+                <DialogTitle className="text-lg font-heading font-bold text-[#0A1F30]">Register New Trainee</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleSubmit(onSubmit)} className="p-8 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Full Name</label>
-                    <Input {...register("fullName", { required: true })} className="bg-white/5 border-white/10 rounded-none h-12 text-sm uppercase tracking-wide" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Email Address</label>
-                    <Input type="email" {...register("email", { required: true })} className="bg-white/5 border-white/10 rounded-none h-12 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Date of Birth</label>
-                    <Input type="date" {...register("dob")} className="bg-white/5 border-white/10 rounded-none h-12 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Gender</label>
-                    <select {...register("gender")} className="w-full bg-white/5 border border-white/10 rounded-none h-12 text-sm px-4 outline-none focus:border-gold uppercase">
-                      <option value="male" className="bg-black">Male</option>
-                      <option value="female" className="bg-black">Female</option>
-                      <option value="other" className="bg-black">Other</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Parent Name</label>
-                    <Input {...register("parentName")} className="bg-white/5 border-white/10 rounded-none h-12 text-sm uppercase" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Parent Mobile</label>
-                    <Input {...register("parentMobile")} className="bg-white/5 border-white/10 rounded-none h-12 text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Assign Branch</label>
-                    <select {...register("branchId", { required: true })} className="w-full bg-white/5 border border-white/10 rounded-none h-12 text-sm px-4 outline-none focus:border-gold uppercase">
-                      <option value="" className="bg-black">Select Branch</option>
-                      {branches.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Assign Trainer</label>
-                    <select {...register("trainerId")} className="w-full bg-white/5 border border-white/10 rounded-none h-12 text-sm px-4 outline-none focus:border-gold uppercase">
-                      <option value="" className="bg-black">Optional</option>
-                      {trainers.filter(t => t.branch_id === watchedBranchId).map(t => (
-                        <option key={t.id} value={t.id} className="bg-black">{t.users?.full_name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Initial Belt</label>
-                    <select {...register("beltLevelId")} className="w-full bg-white/5 border border-white/10 rounded-none h-12 text-sm px-4 outline-none focus:border-gold uppercase">
-                      {beltLevels.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Initial Password</label>
-                    <Input type="password" {...register("password", { required: true })} defaultValue="tkmaa123" className="bg-white/5 border-white/10 rounded-none h-12 text-sm" />
+              <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-8">
+                {/* Section 1: Personal Info */}
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 border-b pb-2">Personal Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Full Name</label>
+                      <Input {...register("fullName", { required: true })} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Email Address</label>
+                      <Input type="email" {...register("email", { required: true })} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Date of Birth</label>
+                      <Input type="date" {...register("dob")} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Gender</label>
+                      <select {...register("gender")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Weight (kg)</label>
+                      <Input type="number" step="0.1" {...register("weight")} placeholder="e.g. 32" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Parent / Guardian Name</label>
+                      <Input {...register("parentName")} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Parent Mobile</label>
+                      <Input {...register("parentMobile")} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
                   </div>
                 </div>
-                <div className="flex gap-4 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1 border-white/10 text-white hover:bg-white/5 h-14 rounded-none uppercase font-black tracking-widest text-xs">Cancel</Button>
-                  <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gold text-black h-14 rounded-none uppercase font-black tracking-widest text-xs glow-gold">
+
+                {/* Section 2: Academy Details */}
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 border-b pb-2">Academy Assignment</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Branch</label>
+                      <select {...register("branchId", { required: true })} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="">Select Branch</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Batch Assignment</label>
+                      <select {...register("batchId")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="">No specific batch</option>
+                        {batches.filter(b => !watchedBranchId || b.branch_id === watchedBranchId).map(b => (
+                          <option key={b.id} value={b.id}>{b.batch_name} ({b.start_time.slice(0,5)} - {b.end_time.slice(0,5)})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Trainer</label>
+                      <select {...register("trainerId")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="">Unassigned</option>
+                        {trainers.filter(t => t.branch_id === watchedBranchId).map(t => (
+                          <option key={t.id} value={t.id}>{t.users?.full_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Starting Belt</label>
+                      <select {...register("beltLevelId")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="fresher">Fresher (No Belt)</option>
+                        {beltLevels.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Fee & Concessions */}
+                <div className="p-5 bg-gray-50 border border-gray-100 rounded-xl">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#0A1F30] mb-4">Fee Configuration & Concession</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Standard Fee (₹)</label>
+                      <Input type="number" {...register("originalFee")} className="bg-white border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Concession Type</label>
+                      <select {...register("concessionType")} className="w-full bg-white border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="none">None</option>
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="fixed">Fixed Amount Off</option>
+                        <option value="scholarship">Full Scholarship</option>
+                        <option value="sibling">Sibling Discount (10%)</option>
+                        <option value="special">Special Case</option>
+                      </select>
+                    </div>
+                    {(watchedConcessionType === 'percentage' || watchedConcessionType === 'fixed' || watchedConcessionType === 'special') && (
+                      <div className="space-y-2">
+                        <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Concession Value</label>
+                        <Input type="number" {...register("concessionValue")} placeholder={watchedConcessionType === 'percentage' ? "e.g. 15" : "e.g. 500"} className="bg-white border-gray-200 rounded-lg h-10 text-sm" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-gray-200/60 flex justify-between items-center">
+                    {(watchedConcessionType !== 'none') && (
+                      <Input {...register("concessionReason")} placeholder="Reason for concession..." className="bg-white border-gray-200 rounded-lg h-10 text-sm max-w-xs" />
+                    )}
+                    <div className="ml-auto text-right">
+                      <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">Final Calculated Fee</p>
+                      <p className="text-2xl font-bold text-emerald-600">₹{finalFee.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-gray-100">
+                  <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1 rounded-lg border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</Button>
+                  <Button type="submit" disabled={isSubmitting} className="flex-1 bg-[#C5A059] hover:bg-[#C5A059]/90 text-white rounded-lg">
                     {isSubmitting ? <Loader2 className="animate-spin" /> : "Complete Registration"}
                   </Button>
                 </div>
@@ -319,111 +416,77 @@ export default function StudentsPage() {
         </div>
       </header>
 
-      <Card className="bg-[#1B2230]/60 border-white/[0.06] backdrop-blur-xl rounded-none overflow-hidden relative">
-        <motion.div initial={{ top: "-5%" }} animate={{ top: "105%" }} transition={{ duration: 5, repeat: Infinity, ease: "linear" }} className="absolute left-0 w-full h-px bg-gradient-to-r from-transparent via-gold/15 to-transparent z-20 pointer-events-none" />
-        <div className="p-6 border-b border-white/[0.06] bg-white/[0.02] flex flex-col md:flex-row gap-6 justify-between items-center">
-          <div className="relative w-full md:w-96 group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold transition-colors" size={18} />
+      <Card className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row gap-4 justify-between items-center">
+          <div className="relative w-full sm:w-80 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#C5A059] transition-colors" size={16} />
             <Input 
-              placeholder="SEARCH BY NAME OR BELT..." 
+              placeholder="Search by ID, name or belt..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 bg-white/5 border-white/10 focus:border-gold/50 rounded-none h-12 uppercase text-[10px] tracking-widest font-bold transition-all"
+              className="pl-9 bg-white border-gray-200 focus:border-[#C5A059] focus:ring-[#C5A059]/20 rounded-lg h-10 text-sm"
             />
           </div>
-          <div className="flex gap-4 items-center w-full md:w-auto">
-            <Filter size={16} className="text-white/20" />
-            <select 
-              value={selectedBranch} 
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="bg-white/5 border border-white/10 h-12 px-6 rounded-none text-[10px] font-black uppercase tracking-widest outline-none focus:border-gold transition-all cursor-pointer"
-            >
-              <option value="all" className="bg-black">All Branches</option>
-              {branches.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
-            </select>
+          <div className="flex gap-3 items-center w-full sm:w-auto">
+            {/* Branch dropdown moved to Sidebar */}
           </div>
         </div>
 
-        <div className="relative">
+        <div className="relative overflow-x-auto">
           <Table>
-            <TableHeader className="bg-white/5">
-              <TableRow className="border-white/10 hover:bg-transparent">
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14 pl-8">Trainee</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14">Rank</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14">Branch</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14">Lead Trainer</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14">Contact</TableHead>
-                <TableHead className="text-gold text-[10px] font-black uppercase tracking-widest h-14 text-right pr-8">Actions</TableHead>
+            <TableHeader className="bg-gray-50/80 border-b border-gray-100">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider py-4 pl-6">Trainee</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Rank</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Branch & Batch</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Lead Trainer</TableHead>
+                <TableHead className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider text-right pr-6">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <AnimatePresence mode="popLayout">
                 {loading ? (
-                  [1, 2, 3, 4, 5].map(i => (
-                    <TableRow key={i} className="border-white/[0.04]">
-                      <TableCell className="pl-8 py-5">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-white/[0.04] shimmer" />
-                          <div className="space-y-2"><div className="h-3 w-28 bg-white/[0.04] shimmer" /><div className="h-2 w-20 bg-white/[0.03] shimmer" /></div>
-                        </div>
-                      </TableCell>
-                      <TableCell><div className="h-5 w-14 bg-white/[0.04] shimmer" /></TableCell>
-                      <TableCell><div className="h-3 w-20 bg-white/[0.04] shimmer" /></TableCell>
-                      <TableCell><div className="h-3 w-24 bg-white/[0.04] shimmer" /></TableCell>
-                      <TableCell><div className="h-3 w-20 bg-white/[0.04] shimmer" /></TableCell>
-                      <TableCell><div className="h-6 w-6 bg-white/[0.04] shimmer ml-auto mr-8" /></TableCell>
-                    </TableRow>
-                  ))
+                  <TableRow><TableCell colSpan={5} className="h-64 text-center"><Loader2 className="animate-spin text-[#C5A059] mx-auto" size={32}/></TableCell></TableRow>
                 ) : filteredStudents.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-64 text-center">
-                      <div className="flex flex-col items-center justify-center text-white/20 uppercase tracking-[0.3em] font-black">
-                        <Users size={48} className="mb-4 opacity-10" />
-                        No Trainees Found
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={5} className="h-64 text-center text-gray-400"><Users size={40} className="mx-auto mb-3 opacity-20" /><p className="text-sm">No Trainees Found</p></TableCell></TableRow>
                 ) : filteredStudents.map((student, i) => (
                   <motion.tr
                     layout
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: i * 0.05 }}
+                    transition={{ delay: i * 0.02 }}
                     key={student.id}
-                    className="group border-white/[0.04] hover:bg-white/[0.03] hover:shadow-[inset_3px_0_0_rgba(214,184,106,0.4)] transition-all duration-300 cursor-pointer"
+                    className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors group cursor-pointer"
                     onClick={() => handleViewProfile(student)}
                   >
-                    <TableCell className="pl-8 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-gold/10 flex items-center justify-center text-gold font-black text-xs border border-gold/20">
+                    <TableCell className="pl-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-700 font-bold text-xs border border-indigo-100">
                           {student.users?.full_name?.charAt(0) || 'U'}
                         </div>
                         <div>
-                          <p className="font-black uppercase tracking-wide text-sm group-hover:text-gold transition-colors">{student.users?.full_name}</p>
-                          <p className="text-[9px] text-white/30 uppercase tracking-[0.2em] mt-0.5">Joined {new Date(student.join_date).toLocaleDateString()}</p>
+                          <p className="font-semibold text-sm text-[#0A1F30]">{student.users?.full_name}</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">
+                            <span className="font-mono bg-gray-100 px-1 py-0.5 rounded mr-1.5 font-semibold text-gray-600">{student.member_id}</span>
+                            Joined {new Date(student.join_date).toLocaleDateString()}
+                          </p>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={`${BELT_COLORS[student.belt_levels?.name] || 'bg-white/10'} rounded-none uppercase text-[8px] font-black tracking-widest px-2.5 py-1`}>
+                      <Badge variant="outline" className={`${BELT_COLORS[student.belt_levels?.name] || 'bg-gray-100 text-gray-700 border-gray-200'} rounded-md font-semibold px-2.5 py-0.5`}>
                         {student.belt_levels?.name || 'White'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-white/60 font-bold uppercase text-[10px] tracking-widest">
-                      {student.branches?.name}
-                    </TableCell>
-                    <TableCell className="text-white/60 font-bold uppercase text-[10px] tracking-widest">
-                      {student.trainers?.users?.full_name || 'UNASSIGNED'}
-                    </TableCell>
                     <TableCell>
-                      <div className="space-y-1">
-                        <p className="text-[10px] text-white/40 font-bold uppercase">{student.parent_phone}</p>
-                        <p className="text-[9px] text-white/20 truncate max-w-[150px]">{student.users?.email}</p>
-                      </div>
+                      <p className="text-sm text-gray-600">{student.branches?.name}</p>
+                      {student.batches && <p className="text-[10px] text-gray-400 uppercase tracking-wider">{student.batches.batch_name}</p>}
                     </TableCell>
-                    <TableCell className="text-right pr-8">
-                      <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gold hover:text-black rounded-none">
+                    <TableCell className="text-sm text-gray-600">
+                      {student.trainers?.users?.full_name || <span className="text-gray-400 italic">Unassigned</span>}
+                    </TableCell>
+                    <TableCell className="text-right pr-6">
+                      <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-[#0A1F30] hover:bg-gray-100 rounded-lg">
                         <ChevronRight size={16} />
                       </Button>
                     </TableCell>
@@ -437,118 +500,141 @@ export default function StudentsPage() {
 
       {/* Student Profile View Dialog */}
       <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
-        <DialogContent className="bg-[#1B2230]/95 border-white/[0.08] backdrop-blur-3xl text-white rounded-none max-w-4xl p-0 overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)]">
+        <DialogContent className="bg-white border border-gray-200 rounded-2xl max-w-5xl p-0 overflow-hidden shadow-xl">
           <AnimatePresence>
             {selectedStudent && (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col md:flex-row h-full"
-              >
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col md:flex-row h-full max-h-[85vh]">
                 {/* Left Panel - Bio */}
-                <div className="w-full md:w-80 bg-white/5 border-r border-white/5 p-8 flex flex-col items-center text-center">
-                  <div className="w-32 h-32 rounded-full bg-gold/10 flex items-center justify-center text-gold font-black text-4xl border-2 border-gold/20 mb-6 shadow-[0_0_30px_rgba(214,184,106,0.1)]">
-                    {selectedStudent.users?.full_name?.charAt(0)}
-                  </div>
-                  <h3 className="text-2xl font-black uppercase tracking-tight mb-2">{selectedStudent.users?.full_name}</h3>
-                  <Badge className={`${BELT_COLORS[selectedStudent.belt_levels?.name] || 'bg-white/10'} rounded-none uppercase text-[9px] font-black tracking-widest px-4 py-1.5 mb-8`}>
-                    {selectedStudent.belt_levels?.name} Rank
-                  </Badge>
-
-                  <div className="w-full space-y-4 text-left">
-                    <div className="p-4 bg-black/40 border border-white/5 rounded-none">
-                      <p className="text-[8px] uppercase tracking-[0.3em] text-white/20 font-black mb-1">Assigned Branch</p>
-                      <p className="text-xs font-bold uppercase tracking-widest">{selectedStudent.branches?.name}</p>
+                <div className="w-full md:w-80 bg-gray-50 border-r border-gray-100 flex flex-col items-center">
+                  <div className="p-8 w-full flex flex-col items-center border-b border-gray-200/50 text-center">
+                    <div className="w-24 h-24 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-700 font-bold text-3xl border border-indigo-100 mb-4 shadow-sm">
+                      {selectedStudent.users?.full_name?.charAt(0)}
                     </div>
-                    <div className="p-4 bg-black/40 border border-white/5 rounded-none">
-                      <p className="text-[8px] uppercase tracking-[0.3em] text-white/20 font-black mb-1">Primary Trainer</p>
-                      <p className="text-xs font-bold uppercase tracking-widest text-gold">{selectedStudent.trainers?.users?.full_name || 'UNASSIGNED'}</p>
-                    </div>
+                    <h3 className="text-xl font-heading font-bold text-[#0A1F30] mb-1">{selectedStudent.users?.full_name}</h3>
+                    <p className="text-xs font-mono font-semibold text-gray-500 bg-white border border-gray-200 px-2.5 py-1 rounded-md mb-3 shadow-sm">{selectedStudent.member_id}</p>
+                    <Badge variant="outline" className={`${BELT_COLORS[selectedStudent.belt_levels?.name] || 'bg-gray-100 text-gray-700 border-gray-200'} rounded-md font-semibold px-3 py-1`}>
+                      {selectedStudent.belt_levels?.name} Rank
+                    </Badge>
+                  </div>
+                  
+                  {/* Navigation Tabs */}
+                  <div className="w-full flex flex-col p-4 gap-1">
+                    {[
+                      { id: 'details', label: 'Student Details', icon: User },
+                      { id: 'financials', label: 'Financial History', icon: CreditCard },
+                      { id: 'certificates', label: 'Certificates', icon: Award }
+                    ].map(tab => (
+                      <button key={tab.id} onClick={() => setProfileTab(tab.id)}
+                        className={`flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg transition-all ${
+                          profileTab === tab.id ? 'bg-[#0A1F30] text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-[#0A1F30]'
+                        }`}>
+                        <tab.icon size={16} /> {tab.label}
+                      </button>
+                    ))}
                   </div>
 
-                  <div className="mt-auto pt-8 w-full flex flex-col gap-3">
-                    <Button variant="outline" className="w-full border-white/10 hover:bg-white/5 text-[10px] uppercase font-black tracking-[0.2em] h-12 rounded-none">
-                      <Edit3 size={14} className="mr-2" /> Update Profile
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => handleDeleteStudent(selectedStudent.id, selectedStudent.user_id)}
-                      disabled={isDeleting}
-                      className="w-full border-red-900/30 text-red-500 hover:bg-red-500 hover:text-white transition-all text-[10px] uppercase font-black tracking-[0.2em] h-12 rounded-none"
-                    >
+                  <div className="mt-auto w-full p-4 border-t border-gray-200/50">
+                    <Button variant="outline" onClick={() => handleDeleteStudent(selectedStudent.id, selectedStudent.user_id)} disabled={isDeleting}
+                      className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 rounded-lg text-xs font-semibold">
                       <Trash2 size={14} className="mr-2" /> Remove Trainee
                     </Button>
                   </div>
                 </div>
 
-                {/* Right Panel - Details & Activity */}
-                <div className="flex-1 p-8 overflow-y-auto max-h-[80vh]">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-                    <div className="space-y-6">
-                      <h4 className="text-xs font-black uppercase tracking-[0.3em] text-gold border-b border-gold/20 pb-2">Information</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/20 font-black">Date of Birth</p>
-                          <p className="text-sm font-bold uppercase">{selectedStudent.dob || 'N/A'}</p>
+                {/* Right Panel - Content */}
+                <div className="flex-1 p-8 overflow-y-auto">
+                  
+                  {/* Details Tab */}
+                  {profileTab === 'details' && (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-[#0A1F30] border-b border-gray-100 pb-2 mb-6">Personal & Academy Information</h4>
+                      <div className="grid grid-cols-2 gap-y-6 gap-x-8 mb-8">
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Email</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.users?.email}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Date of Birth</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.dob || 'N/A'}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Guardian</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.parent_name || 'N/A'}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Mobile</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.parent_phone}</p></div>
+                      </div>
+                      
+                      <div className="p-4 bg-gray-50 border border-gray-100 rounded-xl space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Assigned Branch</p>
+                          <p className="text-sm font-bold text-[#0A1F30]">{selectedStudent.branches?.name}</p>
                         </div>
-                        <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/20 font-black">Gender</p>
-                          <p className="text-sm font-bold uppercase">{selectedStudent.gender}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Assigned Batch</p>
+                          <p className="text-sm font-bold text-[#0A1F30]">{selectedStudent.batches?.batch_name || 'No specific batch'}</p>
                         </div>
-                        <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/20 font-black">Guardian</p>
-                          <p className="text-sm font-bold uppercase">{selectedStudent.parent_name}</p>
-                        </div>
-                        <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/20 font-black">Mobile</p>
-                          <p className="text-sm font-bold uppercase">{selectedStudent.parent_phone}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Lead Trainer</p>
+                          <p className="text-sm font-bold text-[#C5A059]">{selectedStudent.trainers?.users?.full_name || 'UNASSIGNED'}</p>
                         </div>
                       </div>
-                    </div>
-                    <div className="space-y-6">
-                      <h4 className="text-xs font-black uppercase tracking-[0.3em] text-blue-400 border-b border-blue-400/20 pb-2">Credentials</h4>
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <Mail size={16} className="text-white/20" />
-                          <p className="text-sm font-medium text-white/60">{selectedStudent.users?.email}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <Calendar size={16} className="text-white/20" />
-                          <p className="text-sm font-medium text-white/60">Enrolled {new Date(selectedStudent.join_date).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    </motion.div>
+                  )}
 
-                  <div className="space-y-6">
-                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                      <h4 className="text-xs font-black uppercase tracking-[0.3em] text-green-400">Recent Transactions</h4>
-                      <Button variant="link" className="text-white/20 text-[10px] uppercase font-black hover:text-gold p-0 h-auto">View Ledger</Button>
-                    </div>
-                    <div className="space-y-2">
-                      {payments.length === 0 ? (
-                        <div className="p-8 text-center bg-white/5 border border-dashed border-white/10 text-white/20 uppercase text-[10px] tracking-widest font-black">
-                          No transaction history found
-                        </div>
-                      ) : (
-                        payments.map((p, i) => (
-                          <div key={i} className="flex justify-between items-center p-4 bg-white/5 hover:bg-white/10 transition-colors group">
+                  {/* Financials Tab */}
+                  {profileTab === 'financials' && (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                      <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-4">
+                        <h4 className="text-sm font-bold uppercase tracking-wider text-[#0A1F30]">Transaction History</h4>
+                      </div>
+                      <div className="space-y-2">
+                        {payments.length === 0 ? (
+                          <div className="p-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">No transaction history found</div>
+                        ) : payments.map((p, i) => (
+                          <div key={i} className="flex justify-between items-center p-4 bg-white border border-gray-100 rounded-lg shadow-sm">
                             <div className="flex items-center gap-4">
-                              <div className={`w-2 h-2 rounded-full ${p.status === 'paid' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500'}`} />
+                              <div className={`w-2 h-2 rounded-full ${p.status === 'paid' ? 'bg-emerald-500' : 'bg-red-500'}`} />
                               <div>
-                                <p className="text-xs font-bold uppercase tracking-widest">{p.month} Fees</p>
-                                <p className="text-[9px] text-white/20 uppercase tracking-[0.2em]">{new Date(p.created_at).toLocaleDateString()}</p>
+                                <p className="text-sm font-semibold text-[#0A1F30]">{p.notes || `${p.month || 'Fee'} Payment`}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">{new Date(p.created_at).toLocaleDateString()}</p>
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="text-sm font-black text-gold">₹{p.amount}</p>
-                              <p className={`text-[8px] font-black uppercase tracking-widest ${p.status === 'paid' ? 'text-green-500' : 'text-red-500'}`}>{p.status}</p>
+                              <p className="text-sm font-bold text-[#0A1F30]">₹{p.amount}</p>
+                              <p className={`text-[10px] font-semibold uppercase tracking-wider mt-0.5 ${p.status === 'paid' ? 'text-emerald-600' : 'text-red-600'}`}>{p.status}</p>
                             </div>
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Certificates Tab */}
+                  {profileTab === 'certificates' && (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                      <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-4">
+                        <h4 className="text-sm font-bold uppercase tracking-wider text-[#0A1F30]">Certificates & Awards</h4>
+                        <Button onClick={issueCertificate} className="bg-[#0A1F30] hover:bg-[#0A1F30]/90 text-white rounded-lg text-xs h-8">
+                          <Plus size={14} className="mr-1" /> Issue Certificate
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4">
+                        {certificates.length === 0 ? (
+                          <div className="p-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm flex flex-col items-center">
+                            <Award size={32} className="opacity-20 mb-2" />
+                            <p>No certificates issued yet.</p>
+                          </div>
+                        ) : certificates.map(cert => (
+                          <div key={cert.id} className="p-4 border border-gray-200 rounded-xl flex items-center justify-between hover:shadow-md transition-all bg-white group">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-full bg-gold/10 flex items-center justify-center text-gold">
+                                <Award size={20} />
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-[#0A1F30]">{cert.title}</p>
+                                <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider">Issued: {new Date(cert.issued_date).toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                            <Button variant="ghost" className="text-[#C5A059] opacity-0 group-hover:opacity-100 transition-opacity">
+                              <FileText size={16} className="mr-2" /> View PDF
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                  
                 </div>
               </motion.div>
             )}

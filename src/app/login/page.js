@@ -43,7 +43,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at 30% 20%, #1B2230 0%, #111827 40%, #0B0F19 100%)' }}
+      style={{ background: 'radial-gradient(circle at 30% 20%, #faf3ea 0%, #f3e8df 40%, #ece1d8 100%)' }}
     >
       <ThreeBackground />
       
@@ -53,7 +53,7 @@ export default function LoginPage() {
       
       {/* Ambient glows */}
       <div className="absolute top-1/4 left-1/3 w-[500px] h-[500px] bg-gold/[0.04] blur-[150px] rounded-full animate-glow-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-blue-500/[0.03] blur-[120px] rounded-full animate-glow-pulse" style={{ animationDelay: '2s' }} />
+      <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-[#a7ccda]/[0.03] blur-[120px] rounded-full animate-glow-pulse" style={{ animationDelay: '2s' }} />
 
       {/* Decorative corner elements */}
       <div className="fixed top-8 left-8 flex items-center gap-3 z-20">
@@ -82,9 +82,9 @@ export default function LoginPage() {
             <motion.div
               animate={{ 
                 boxShadow: [
-                  '0 0 30px rgba(214,184,106,0.2)',
-                  '0 0 50px rgba(214,184,106,0.4)',
-                  '0 0 30px rgba(214,184,106,0.2)'
+                  '0 0 30px rgba(197,160,89,0.2)',
+                  '0 0 50px rgba(197,160,89,0.4)',
+                  '0 0 30px rgba(197,160,89,0.2)'
                 ]
               }}
               transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
@@ -111,8 +111,8 @@ export default function LoginPage() {
             Secure Access · TKMAA Portal
           </motion.p>
         </div>
-
-        <Card className="bg-[#1B2230]/80 backdrop-blur-2xl border border-white/[0.08] p-10 rounded-none relative overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]">
+ 
+        <Card className="bg-[#0A1F30]/80 backdrop-blur-2xl border border-white/[0.08] p-10 rounded-none relative overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]">
           {/* Animated top border */}
           <motion.div 
             initial={{ scaleX: 0 }}
@@ -131,6 +131,19 @@ export default function LoginPage() {
           
           {/* Grid overlay */}
           <div className="absolute inset-0 grid-overlay-dense opacity-15 pointer-events-none" />
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10 relative z-10">
+            {[
+              { label: 'Secure access', value: 'AES 256-bit' },
+              { label: 'Instant sync', value: 'Branch-wide' },
+              { label: 'Trusted by', value: '150+ hubs' },
+            ].map((item, index) => (
+              <div key={index} className="rounded-none border border-white/[0.08] bg-white/[0.03] p-4 text-center backdrop-blur-xl">
+                <p className="text-[9px] uppercase tracking-[0.35em] text-white/30 font-bold mb-2">{item.label}</p>
+                <p className="text-lg font-black uppercase tracking-[0.15em] text-white">{item.value}</p>
+              </div>
+            ))}
+          </div>
           
           <form onSubmit={handleAuth} className="space-y-7 relative z-10">
             <motion.div 
