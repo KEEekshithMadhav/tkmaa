@@ -1,32 +1,29 @@
 "use client"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import Sidebar from "@/components/Sidebar"
 import CommandPalette from "@/components/CommandPalette"
 import { supabase } from "@/lib/supabase"
 import Image from "next/image"
 import { BranchProvider } from "@/context/BranchContext"
+import { SportProvider } from "@/context/SportContext"
+import { useAuth } from "@/context/AuthContext"
 
 export default function DashboardLayout({ children }) {
-  const [loading, setLoading] = useState(true)
-  const [session, setSession] = useState(null)
+  const { isAuthenticated, loading } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
+
+  const isKumiteScoring = pathname === "/dashboard/tournaments/kumite"
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push("/login")
-      } else {
-        setSession(session)
-        setLoading(false)
-      }
+    if (!loading && !isAuthenticated) {
+      router.push("/login")
     }
-    checkAuth()
-  }, [router])
+  }, [loading, isAuthenticated, router])
 
-  if (loading) {
+  if (loading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-6 relative overflow-hidden bg-[#F8F9FA]">
         {/* Subtle ambient glow */}
@@ -82,25 +79,39 @@ export default function DashboardLayout({ children }) {
     )
   }
 
+  if (isKumiteScoring) {
+    return (
+      <SportProvider>
+        <BranchProvider>
+          <div className="min-h-screen bg-[#070D15] text-white">
+            {children}
+          </div>
+        </BranchProvider>
+      </SportProvider>
+    )
+  }
+
   return (
-    <BranchProvider>
-      <div className="flex min-h-screen text-[#0A1F30] relative overflow-hidden bg-[#F8F9FA]">
-        <Sidebar />
-        <CommandPalette />
-        <main className="flex-1 p-6 md:p-8 lg:p-12 relative z-10 overflow-y-auto">
-          <AnimatePresence mode="wait">
-            <motion.div 
-              key="dashboard-content"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="max-w-7xl mx-auto relative z-10"
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
-        </main>
-      </div>
-    </BranchProvider>
+    <SportProvider>
+      <BranchProvider>
+        <div className="flex min-h-screen text-[#0A1F30] relative overflow-hidden bg-[#F8F9FA]">
+          <Sidebar />
+          <CommandPalette />
+          <main className="flex-1 p-6 md:p-8 lg:p-12 relative z-10 overflow-y-auto">
+            <AnimatePresence mode="wait">
+              <motion.div 
+                key="dashboard-content"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="max-w-7xl mx-auto relative z-10"
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </BranchProvider>
+    </SportProvider>
   )
 }

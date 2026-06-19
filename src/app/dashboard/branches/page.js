@@ -12,7 +12,7 @@ import {
   Zap, MoreVertical, Edit2, Trash2, UserPlus, Shield, X, Check, Loader2,
   ChevronDown, ChevronUp, UserCog
 } from 'lucide-react'
-import { supabase, updateUserRole, getAllUsers } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from 'sonner'
 import { useForm } from "react-hook-form"
@@ -51,9 +51,6 @@ export default function BranchesPage() {
   const [expandedBranch, setExpandedBranch] = useState(null)
   const [branchPersonnel, setBranchPersonnel] = useState({})
   const [branchManagers, setBranchManagers] = useState({})
-  const [allUsers, setAllUsers] = useState([])
-  const [assignOpen, setAssignOpen] = useState(null) // branchId
-  const [roleChangeUser, setRoleChangeUser] = useState(null) // {userId, currentRole}
   const [submitting, setSubmitting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(null)
 
@@ -167,73 +164,7 @@ export default function BranchesPage() {
     }
   }
 
-  // Assign user to branch
-  const openAssignDialog = async (branchId) => {
-    setAssignOpen(branchId)
-    const { data } = await getAllUsers()
-    if (data) setAllUsers(data)
-  }
 
-  const assignTrainerToBranch = async (userId, branchId) => {
-    const tid = toast.loading('Assigning trainer...')
-    try {
-      const { error } = await supabase.from('trainers')
-        .update({ branch_id: branchId })
-        .eq('user_id', userId)
-      if (error) throw error
-      toast.success('Trainer assigned', { id: tid })
-      setAssignOpen(null)
-      fetchPersonnel(branchId)
-      fetchBranches()
-    } catch (err) {
-      toast.error('Failed: ' + err.message, { id: tid })
-    }
-  }
-
-  const assignManagerToBranch = async (userId, branchId) => {
-    const tid = toast.loading('Assigning manager...')
-    try {
-      // Update user role
-      await supabase.from('users').update({ role: 'branch_manager' }).eq('id', userId)
-      // Create assignment
-      const { error } = await supabase.from('branch_managers')
-        .insert([{ user_id: userId, branch_id: branchId }])
-      if (error) throw error
-      toast.success('Branch manager assigned', { id: tid })
-      setAssignOpen(null)
-      fetchPersonnel(branchId)
-      fetchBranches()
-    } catch (err) {
-      toast.error('Failed: ' + err.message, { id: tid })
-    }
-  }
-
-  const removeManagerFromBranch = async (userId, branchId) => {
-    const tid = toast.loading('Removing manager...')
-    try {
-      const { error } = await supabase.from('branch_managers')
-        .delete().eq('user_id', userId).eq('branch_id', branchId)
-      if (error) throw error
-      toast.success('Manager removed', { id: tid })
-      fetchPersonnel(branchId)
-    } catch (err) {
-      toast.error('Failed: ' + err.message, { id: tid })
-    }
-  }
-
-  // Change user role
-  const changeRole = async (userId, newRole) => {
-    const tid = toast.loading('Changing role...')
-    try {
-      const { error } = await updateUserRole(userId, newRole)
-      if (error) throw error
-      toast.success(`Role changed to ${ROLE_LABELS[newRole]}`, { id: tid })
-      setRoleChangeUser(null)
-      if (expandedBranch) fetchPersonnel(expandedBranch)
-    } catch (err) {
-      toast.error('Failed: ' + err.message, { id: tid })
-    }
-  }
 
   if (loading) {
     return (
@@ -303,9 +234,6 @@ export default function BranchesPage() {
                         >
                           <button onClick={() => { openEditDialog(branch); setMenuOpen(null) }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                             <Edit2 size={14} /> Edit Branch
-                          </button>
-                          <button onClick={() => { openAssignDialog(branch.id); setMenuOpen(null) }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                            <UserPlus size={14} /> Assign User
                           </button>
                           <div className="border-t border-gray-100 my-1" />
                           <button onClick={() => { deleteBranch(branch.id); setMenuOpen(null) }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors">
@@ -415,9 +343,6 @@ export default function BranchesPage() {
                                     <span className={`text-[9px] px-2 py-0.5 rounded-full border font-semibold ${ROLE_COLORS.branch_manager}`}>
                                       Manager
                                     </span>
-                                    <button onClick={() => removeManagerFromBranch(mgr.user_id, branch.id)} className="text-red-400 hover:text-red-600 transition-colors p-1">
-                                      <X size={14} />
-                                    </button>
                                   </div>
                                 </div>
                               ))}
@@ -444,36 +369,6 @@ export default function BranchesPage() {
                                     <span className={`text-[9px] px-2 py-0.5 rounded-full border font-semibold ${ROLE_COLORS[trainer.users?.role || 'trainer']}`}>
                                       {ROLE_LABELS[trainer.users?.role || 'trainer']}
                                     </span>
-                                    <div className="relative">
-                                      <button 
-                                        onClick={() => setRoleChangeUser(roleChangeUser?.userId === trainer.users?.id ? null : { userId: trainer.users?.id, currentRole: trainer.users?.role })}
-                                        className="text-gray-400 hover:text-[#C5A059] transition-colors p-1" title="Change Role"
-                                      >
-                                        <UserCog size={14} />
-                                      </button>
-                                      <AnimatePresence>
-                                        {roleChangeUser?.userId === trainer.users?.id && (
-                                          <motion.div
-                                            initial={{ opacity: 0, scale: 0.95 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            exit={{ opacity: 0, scale: 0.95 }}
-                                            className="absolute right-0 top-8 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2 w-44"
-                                          >
-                                            {Object.entries(ROLE_LABELS).filter(([k]) => k !== 'parent').map(([key, label]) => (
-                                              <button
-                                                key={key}
-                                                onClick={() => changeRole(trainer.users.id, key)}
-                                                disabled={key === roleChangeUser.currentRole}
-                                                className={`w-full flex items-center gap-2 px-4 py-2 text-xs transition-colors ${key === roleChangeUser.currentRole ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
-                                              >
-                                                {key === roleChangeUser.currentRole && <Check size={12} className="text-emerald-500" />}
-                                                {label}
-                                              </button>
-                                            ))}
-                                          </motion.div>
-                                        )}
-                                      </AnimatePresence>
-                                    </div>
                                   </div>
                                 </div>
                               ))}
@@ -481,12 +376,9 @@ export default function BranchesPage() {
                           )}
                         </div>
 
-                        <button 
-                          onClick={() => openAssignDialog(branch.id)}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-gray-300 rounded-lg text-xs font-semibold text-gray-500 hover:text-[#0A1F30] hover:border-[#C5A059] transition-colors"
-                        >
-                          <UserPlus size={14} /> Assign User to Branch
-                        </button>
+                        <p className="text-[10px] text-gray-400 text-center py-2">
+                          Manage personnel and roles centrally in the <a href="/dashboard/users" className="text-[#C5A059] font-bold hover:underline">User Roles</a> console.
+                        </p>
                       </div>
                     </motion.div>
                   )}
@@ -577,45 +469,6 @@ export default function BranchesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Assign User Dialog */}
-      <Dialog open={!!assignOpen} onOpenChange={(open) => !open && setAssignOpen(null)}>
-        <DialogContent className="bg-white border border-gray-200 rounded-2xl max-w-lg p-0 overflow-hidden max-h-[80vh]">
-          <DialogHeader className="p-6 border-b border-gray-100">
-            <DialogTitle className="text-lg font-heading font-bold text-[#0A1F30]">Assign User to Branch</DialogTitle>
-          </DialogHeader>
-          <div className="p-6 space-y-4 overflow-y-auto max-h-[60vh]">
-            <p className="text-xs text-gray-500 mb-4">Select a user and their role at this branch:</p>
-            
-            {allUsers.filter(u => u.role !== 'admin').length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">No users available to assign</p>
-            ) : (
-              <div className="space-y-2">
-                {allUsers.filter(u => u.role !== 'admin').map(user => (
-                  <div key={user.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 border border-gray-100 hover:border-gray-200 transition-colors">
-                    <div>
-                      <p className="text-sm font-semibold text-[#0A1F30]">{user.full_name}</p>
-                      <p className="text-[10px] text-gray-400">{user.email}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[9px] px-2 py-0.5 rounded-full border font-semibold ${ROLE_COLORS[user.role] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                        {ROLE_LABELS[user.role] || user.role}
-                      </span>
-                      {user.role === 'trainer' && (
-                        <Button size="sm" onClick={() => assignTrainerToBranch(user.id, assignOpen)} className="h-7 text-[10px] bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3">
-                          Assign as Trainer
-                        </Button>
-                      )}
-                      <Button size="sm" onClick={() => assignManagerToBranch(user.id, assignOpen)} variant="outline" className="h-7 text-[10px] border-purple-300 text-purple-700 hover:bg-purple-50 rounded-lg px-3">
-                        <Shield size={10} className="mr-1" /> Make Manager
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </motion.div>
   )
 }

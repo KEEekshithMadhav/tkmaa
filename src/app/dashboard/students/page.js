@@ -13,11 +13,14 @@ import {
 import { 
   Search, Plus, Download, Filter, Loader2, 
   Calendar, Users, Mail, ChevronRight,
-  Trash2, Edit3, Award, CreditCard, User, FileText
+  Trash2, Edit3, Award, CreditCard, User, FileText,
+  Eye, EyeOff, KeyRound
 } from 'lucide-react'
 import { useForm, useWatch } from "react-hook-form"
 import { supabase } from '@/lib/supabase'
 import { useBranch } from '@/context/BranchContext'
+import { useSport } from '@/context/SportContext'
+import { useAuth } from '@/context/AuthContext'
 import { toast } from 'sonner'
 import { Badge } from "@/components/ui/badge"
 
@@ -30,12 +33,15 @@ const BELT_COLORS = {
   Purple: 'bg-purple-100 text-purple-800 border-purple-200',
   Red: 'bg-red-100 text-red-800 border-red-200',
   Brown: 'bg-amber-100 text-amber-900 border-amber-300',
-  Black: 'bg-gray-900 text-white border-gray-700'
+  Black: 'bg-gray-950 text-white border-gray-750'
 }
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([])
   const { branches, selectedBranch } = useBranch()
+  const { selectedSport, isKarate } = useSport()
+  const { permissions } = useAuth()
+  const [sports, setSports] = useState([])
   const [trainers, setTrainers] = useState([])
   const [beltLevels, setBeltLevels] = useState([])
   const [batches, setBatches] = useState([])
@@ -43,6 +49,8 @@ export default function StudentsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [open, setOpen] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   
   // Profile state
   const [selectedStudent, setSelectedStudent] = useState(null)
@@ -55,13 +63,30 @@ export default function StudentsPage() {
     defaultValues: {
       originalFee: 2000,
       concessionType: 'none',
-      concessionValue: 0
+      concessionValue: 0,
+      sportId: ''
     }
   })
   const watchedBranchId = watch("branchId")
   const watchedFee = watch("originalFee")
   const watchedConcessionType = watch("concessionType")
   const watchedConcessionValue = watch("concessionValue")
+  const watchedSportId = watch("sportId")
+  const watchedDob = watch("dob")
+
+  const calculateAge = (dobString) => {
+    if (!dobString) return null
+    const today = new Date()
+    const birthDate = new Date(dobString)
+    let age = today.getFullYear() - birthDate.getFullYear()
+    const m = today.getMonth() - birthDate.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--
+    }
+    return age
+  }
+
+  const calculatedAge = watchedDob ? calculateAge(watchedDob) : ''
 
   // Auto-calculate final fee
   const finalFee = (() => {
@@ -92,18 +117,58 @@ export default function StudentsPage() {
       }
       const { data: batchData } = await supabase.from('batches').select('*').eq('is_active', true)
       if (batchData) setBatches(batchData)
+      
+      const { data: sData } = await supabase.from('sports').select('*').eq('status', 'active').order('sport_name')
+      if (sData) setSports(sData)
     }
     initData()
   }, [])
 
   useEffect(() => {
     fetchStudents()
-  }, [selectedBranch])
+  }, [selectedBranch, selectedSport, permissions])
 
   async function fetchStudents() {
+    if (!permissions) return
     setLoading(true)
-    let query = supabase.from('students').select('*, users(*), branches(name), belt_levels(name, hex), trainers(users(full_name)), batches(batch_name)')
-    if (selectedBranch !== 'all') query = query.eq('branch_id', selectedBranch)
+    
+    let studentIds = null
+    if (selectedSport && selectedSport !== 'all') {
+      const { data: ss } = await supabase
+        .from('student_sports')
+        .select('student_id')
+        .eq('sport_id', selectedSport)
+      studentIds = ss?.map(s => s.student_id) || []
+      if (studentIds.length === 0) {
+        setStudents([])
+        setLoading(false)
+        return
+      }
+    } else if (permissions.role === 'sport_admin' && permissions.sportIds?.length > 0) {
+      const { data: ss } = await supabase
+        .from('student_sports')
+        .select('student_id')
+        .in('sport_id', permissions.sportIds)
+      studentIds = ss?.map(s => s.student_id) || []
+      if (studentIds.length === 0) {
+        setStudents([])
+        setLoading(false)
+        return
+      }
+    }
+
+    let query = supabase.from('students').select('*, users(*), branches(name), belt_levels(name, hex), trainers(users(full_name)), batches(batch_name), student_sports(sports(sport_name))')
+    
+    if (selectedBranch !== 'all') {
+      query = query.eq('branch_id', selectedBranch)
+    } else if (permissions.branchIds && permissions.branchIds.length > 0) {
+      query = query.in('branch_id', permissions.branchIds)
+    }
+
+    if (studentIds !== null) {
+      query = query.in('id', studentIds)
+    }
+    
     const { data } = await query
     if (data) setStudents(data)
     setLoading(false)
@@ -144,62 +209,88 @@ export default function StudentsPage() {
 
   const onSubmit = async (formData) => {
     setIsSubmitting(true)
-    const toastId = toast.loading('Registering student...')
+    const toastId = toast.loading('Creating student account...')
     try {
-      // Generate email if not provided
-      const email = formData.email?.trim() || `${formData.fullName.toLowerCase().replace(/\s+/g, '.')}.${Date.now()}@tkmaa.local`
+      const email = formData.email?.trim()
+      if (!email) throw new Error('Email is required so the student can log in.')
+      if (!formData.password) throw new Error('Password is required.')
+      if (formData.password.length < 6) throw new Error('Password must be at least 6 characters.')
+      if (formData.password !== formData.confirmPassword) throw new Error('Passwords do not match.')
 
-      // Check if email already exists
-      const { data: existingUser } = await supabase.from('users').select('id').eq('email', email).maybeSingle()
-      if (existingUser) throw new Error('A user with this email already exists. Please use a different email.')
+      // Step 1: Create Auth account + public.users via service role API
+      // This auto-confirms the email — student can login immediately
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password: formData.password,
+          full_name: formData.fullName,
+          phone: formData.parentMobile,
+          role: 'student'
+        })
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Account creation failed.')
 
-      const tempId = crypto.randomUUID()
-      // 1. Create User — the DB trigger `handle_new_user_role` auto-creates a student record
-      const { error: userError } = await supabase.from('users').insert([{
-        id: tempId,
-        clerk_id: tempId,
-        email: email,
-        full_name: formData.fullName,
-        phone: formData.parentMobile,
-        role: 'student'
-      }])
-      if (userError) throw userError
+      const newUserId = result.userId
 
-      // 2. UPDATE the trigger-created student record with full details
-      const { data: updatedStudent, error: studentError } = await supabase.from('students')
+      // Step 2: Wait a moment for the DB trigger to create the student row
+      await new Promise(r => setTimeout(r, 800))
+
+      // Find if selected sport is Karate to save belt level, otherwise null
+      const selectedSportObj = sports.find(s => s.id === formData.sportId)
+      const isFormKarate = selectedSportObj?.sport_name === 'Karate'
+
+      // Step 3: Update the trigger-created student record with full details
+      const { error: studentError } = await supabase.from('students')
         .update({
           branch_id: formData.branchId,
           trainer_id: formData.trainerId || null,
           batch_id: formData.batchId || null,
-          belt_level_id: (formData.beltLevelId && formData.beltLevelId !== 'fresher') ? formData.beltLevelId : null,
+          belt_level_id: (isFormKarate && formData.beltLevelId && formData.beltLevelId !== 'fresher') ? formData.beltLevelId : null,
           dob: formData.dob || null,
           gender: formData.gender,
           weight: formData.weight ? parseFloat(formData.weight) : null,
+          height: formData.height ? parseFloat(formData.height) : null,
           parent_name: formData.parentName,
           parent_phone: formData.parentMobile,
+          alt_mobile: formData.altMobile || null,
+          blood_group: formData.bloodGroup || null,
+          medical_notes: formData.medicalNotes || null,
+          age: calculatedAge ? parseInt(calculatedAge) : null,
           join_date: new Date().toISOString().split('T')[0]
         })
-        .eq('user_id', tempId)
-        .select()
-        .single()
+        .eq('user_id', newUserId)
+
       if (studentError) {
-        // Cleanup: remove the user we just created if student update fails
-        await supabase.from('users').delete().eq('id', tempId)
-        throw studentError
+        toast.error('Profile update issue: ' + studentError.message + ' — account was still created.', { id: toastId })
       }
 
-      // 3. Create Concession if applicable
-      if (formData.concessionType !== 'none') {
-        await supabase.from('concessions').insert([{
-          student_id: updatedStudent.id,
-          concession_type: formData.concessionType,
-          concession_value: parseFloat(formData.concessionValue) || 0,
-          final_fee: finalFee,
-          reason: formData.concessionReason || 'Registration fee concession'
+      const { data: studentRow } = await supabase.from('students').select('id').eq('user_id', newUserId).maybeSingle()
+      if (studentRow) {
+        // Link to the selected sport
+        const { error: sportLinkError } = await supabase.from('student_sports').insert([{
+          student_id: studentRow.id,
+          sport_id: formData.sportId
         }])
+        if (sportLinkError) {
+          console.error('Sport link error:', sportLinkError)
+        }
+
+        // Step 4: Create Concession if applicable
+        if (formData.concessionType !== 'none') {
+          await supabase.from('concessions').insert([{
+            student_id: studentRow.id,
+            concession_type: formData.concessionType,
+            concession_value: parseFloat(formData.concessionValue) || 0,
+            final_fee: finalFee,
+            reason: formData.concessionReason || 'Registration fee concession'
+          }])
+        }
       }
 
-      toast.success('Student registered successfully', { id: toastId })
+      toast.success(`✅ ${formData.fullName} registered! Login: ${email} / ${formData.password}`, { id: toastId, duration: 8000 })
       setOpen(false)
       reset()
       fetchStudents()
@@ -217,11 +308,14 @@ export default function StudentsPage() {
   )
 
   const exportCSV = () => {
-    const headers = ['Member ID', 'Student Name', 'DOB', 'Gender', 'Parent Name', 'Parent Mobile', 'Branch', 'Batch', 'Join Date']
+    const headers = ['Member ID', 'Student Name', 'DOB', 'Age', 'Weight (kg)', 'Height (cm)', 'Gender', 'Parent Name', 'Parent Mobile', 'Branch', 'Batch', 'Join Date']
     const csvData = students.map(s => [
       s.member_id || '',
       s.users?.full_name || '',
       s.dob ? new Date(s.dob).toLocaleDateString('en-IN') : '',
+      s.age || '',
+      s.weight || '',
+      s.height || '',
       s.gender || '',
       s.parent_name || '',
       s.parent_phone ? `="${s.parent_phone}"` : '',
@@ -306,6 +400,10 @@ export default function StudentsPage() {
                       <Input type="date" {...register("dob")} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
                     </div>
                     <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Age (Auto-calculated)</label>
+                      <Input type="text" value={calculatedAge !== '' ? `${calculatedAge} years` : 'Enter DOB to calculate'} disabled className="bg-gray-100 border-gray-200 rounded-lg h-10 text-sm font-semibold" />
+                    </div>
+                    <div className="space-y-2">
                       <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Gender</label>
                       <select {...register("gender")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
                         <option value="male">Male</option>
@@ -314,8 +412,26 @@ export default function StudentsPage() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Weight (kg)</label>
-                      <Input type="number" step="0.1" {...register("weight")} placeholder="e.g. 32" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Blood Group</label>
+                      <select {...register("bloodGroup")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="">Select Blood Group</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Weight (kg) <span className="text-red-500">*</span></label>
+                      <Input type="number" step="0.1" {...register("weight", { required: true })} placeholder="e.g. 32" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Height (cm) <span className="text-red-500">*</span></label>
+                      <Input type="number" step="0.1" {...register("height", { required: true })} placeholder="e.g. 154" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Parent / Guardian Name</label>
@@ -325,13 +441,70 @@ export default function StudentsPage() {
                       <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Parent Mobile</label>
                       <Input {...register("parentMobile")} className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Alternative Contact Mobile</label>
+                      <Input {...register("altMobile")} placeholder="Alternative guardian mobile" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Medical Notes / Conditions</label>
+                      <Input {...register("medicalNotes")} placeholder="e.g. Asthma, allergies, past injuries (or none)" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
+                    </div>
                   </div>
+                </div>
+
+                {/* Section: Login Credentials */}
+                <div className="p-5 bg-blue-50 border border-blue-100 rounded-xl">
+                  <div className="flex items-center gap-2 mb-4">
+                    <KeyRound size={14} className="text-blue-600" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-blue-800">Login Credentials</h3>
+                  </div>
+                  <p className="text-xs text-blue-600 mb-4">These credentials will be used by the student / parent to log in to the portal.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Password <span className="text-red-500">*</span></label>
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="Min. 6 characters"
+                          {...register("password", { required: true, minLength: 6 })}
+                          className="bg-white border-gray-200 rounded-lg h-10 text-sm pr-10"
+                        />
+                        <button type="button" onClick={() => setShowPassword(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                          {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Confirm Password <span className="text-red-500">*</span></label>
+                      <div className="relative">
+                        <Input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          placeholder="Re-enter password"
+                          {...register("confirmPassword", { required: true })}
+                          className="bg-white border-gray-200 rounded-lg h-10 text-sm pr-10"
+                        />
+                        <button type="button" onClick={() => setShowConfirmPassword(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                          {showConfirmPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-blue-500 mt-3 font-mono">💡 Tip: Use format Name@1234 — e.g. for "Rahul": Rahul@1234</p>
                 </div>
 
                 {/* Section 2: Academy Details */}
                 <div>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 border-b pb-2">Academy Assignment</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Sport Enrollment <span className="text-red-500">*</span></label>
+                      <select {...register("sportId", { required: true })} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                        <option value="">Select Sport</option>
+                        {sports.map(s => <option key={s.id} value={s.id}>{s.sport_name}</option>)}
+                      </select>
+                    </div>
                     <div className="space-y-2">
                       <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Branch</label>
                       <select {...register("branchId", { required: true })} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
@@ -343,7 +516,7 @@ export default function StudentsPage() {
                       <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Batch Assignment</label>
                       <select {...register("batchId")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
                         <option value="">No specific batch</option>
-                        {batches.filter(b => !watchedBranchId || b.branch_id === watchedBranchId).map(b => (
+                        {batches.filter(b => (!watchedBranchId || b.branch_id === watchedBranchId) && (!watchedSportId || b.sport_id === watchedSportId)).map(b => (
                           <option key={b.id} value={b.id}>{b.batch_name} ({b.start_time.slice(0,5)} - {b.end_time.slice(0,5)})</option>
                         ))}
                       </select>
@@ -357,13 +530,21 @@ export default function StudentsPage() {
                         ))}
                       </select>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Starting Belt</label>
-                      <select {...register("beltLevelId")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
-                        <option value="fresher">Fresher (No Belt)</option>
-                        {beltLevels.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
-                    </div>
+                    {(() => {
+                      const sp = sports.find(s => s.id === watchedSportId)
+                      if (sp?.sport_name === 'Karate') {
+                        return (
+                          <div className="space-y-2">
+                            <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Starting Belt</label>
+                            <select {...register("beltLevelId")} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                              <option value="fresher">Fresher (No Belt)</option>
+                              {beltLevels.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
                   </div>
                 </div>
 
@@ -465,7 +646,16 @@ export default function StudentsPage() {
                           {student.users?.full_name?.charAt(0) || 'U'}
                         </div>
                         <div>
-                          <p className="font-semibold text-sm text-[#0A1F30]">{student.users?.full_name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-sm text-[#0A1F30]">{student.users?.full_name}</p>
+                            <div className="flex gap-1">
+                              {student.student_sports?.map(ss => ss.sports && (
+                                <Badge key={ss.sports.sport_name} variant="outline" className="text-[8px] px-1 py-0 font-bold tracking-tight bg-blue-50 text-blue-700 border-blue-100">
+                                  {ss.sports.sport_name}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                           <p className="text-[10px] text-gray-500 mt-0.5">
                             <span className="font-mono bg-gray-100 px-1 py-0.5 rounded mr-1.5 font-semibold text-gray-600">{student.member_id}</span>
                             Joined {new Date(student.join_date).toLocaleDateString()}
@@ -551,11 +741,27 @@ export default function StudentsPage() {
                       <div className="grid grid-cols-2 gap-y-6 gap-x-8 mb-8">
                         <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Email</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.users?.email}</p></div>
                         <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Date of Birth</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.dob || 'N/A'}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Age</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.age ? `${selectedStudent.age} years` : 'N/A'}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Blood Group</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.blood_group || 'N/A'}</p></div>
                         <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Guardian</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.parent_name || 'N/A'}</p></div>
                         <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Mobile</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.parent_phone}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Alt Mobile</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.alt_mobile || 'N/A'}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Weight</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.weight ? `${selectedStudent.weight} kg` : 'N/A'}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Height</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.height ? `${selectedStudent.height} cm` : 'N/A'}</p></div>
+                        <div className="col-span-2"><p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Medical Notes</p><p className="text-sm font-medium text-[#0A1F30]">{selectedStudent.medical_notes || 'None'}</p></div>
                       </div>
                       
                       <div className="p-4 bg-gray-50 border border-gray-100 rounded-xl space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Enrolled Sports</p>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedStudent.student_sports?.map(ss => ss.sports && (
+                              <Badge key={ss.sports.sport_name} variant="outline" className="text-[10px] font-semibold">
+                                {ss.sports.sport_name}
+                              </Badge>
+                            )) || <span className="text-sm font-bold text-gray-500">None</span>}
+                          </div>
+                        </div>
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Assigned Branch</p>
                           <p className="text-sm font-bold text-[#0A1F30]">{selectedStudent.branches?.name}</p>

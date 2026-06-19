@@ -5,31 +5,47 @@ import {
   LayoutDashboard, Users, UserRound, MapPin, 
   CreditCard, Bell, Settings, LogOut, Trophy, 
   CalendarCheck, Menu, X, ChevronRight, Shield,
-  Layers, Package
+  Layers, Package, Dumbbell, BarChart3
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
-import { supabase, getUserRole } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { useBranch } from "@/context/BranchContext"
+import { useSport } from "@/context/SportContext"
+import { useAuth } from "@/context/AuthContext"
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Overview", href: "/dashboard", roles: ['admin', 'trainer', 'student', 'branch_manager'] },
-  { icon: Users, label: "Students", href: "/dashboard/students", roles: ['admin', 'trainer', 'branch_manager'] },
-  { icon: UserRound, label: "Trainers", href: "/dashboard/trainers", roles: ['admin', 'branch_manager'] },
-  { icon: Layers, label: "Batches", href: "/dashboard/batches", roles: ['admin', 'trainer', 'branch_manager'] },
-  { icon: MapPin, label: "Branches", href: "/dashboard/branches", roles: ['admin'] },
-  { icon: Trophy, label: "Tournaments", href: "/dashboard/tournaments", roles: ['admin', 'trainer', 'student', 'branch_manager'] },
-  { icon: CalendarCheck, label: "Attendance", href: "/dashboard/attendance", roles: ['admin', 'trainer', 'branch_manager'] },
-  { icon: CreditCard, label: "Payments", href: "/dashboard/payments", roles: ['admin', 'branch_manager'] },
-  { icon: Package, label: "Inventory", href: "/dashboard/inventory", roles: ['admin', 'branch_manager'] },
-  { icon: Bell, label: "Notices", href: "/dashboard/notices", roles: ['admin', 'trainer', 'student', 'branch_manager'] },
-  { icon: Shield, label: "Audit Logs", href: "/dashboard/audit-logs", roles: ['admin'] },
+  { icon: LayoutDashboard, label: "Overview", href: "/dashboard", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin', 'trainer', 'student', 'parent'] },
+  { icon: Dumbbell, label: "Sports", href: "/dashboard/sports", roles: ['super_admin', 'admin', 'branch_admin'] },
+  { icon: Users, label: "Students", href: "/dashboard/students", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin', 'trainer'] },
+  { icon: UserRound, label: "Trainers", href: "/dashboard/trainers", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin'] },
+  { icon: Layers, label: "Batches", href: "/dashboard/batches", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin', 'trainer'] },
+  { icon: MapPin, label: "Branches", href: "/dashboard/branches", roles: ['super_admin', 'admin'] },
+  { icon: Trophy, label: "Tournaments", href: "/dashboard/tournaments", roles: ['super_admin', 'admin', 'sport_admin', 'trainer', 'student', 'branch_admin'], sportOnly: 'Karate' },
+  { icon: Trophy, label: "Leaderboard", href: "/dashboard/leaderboard", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin', 'trainer', 'student', 'parent'] },
+  { icon: CalendarCheck, label: "Attendance", href: "/dashboard/attendance", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin', 'trainer'] },
+  { icon: CreditCard, label: "Payments", href: "/dashboard/payments", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin'] },
+  { icon: BarChart3, label: "Reports", href: "/dashboard/reports", roles: ['super_admin', 'admin', 'sport_admin', 'branch_admin'] },
+  { icon: Package, label: "Inventory", href: "/dashboard/inventory", roles: ['super_admin', 'admin', 'branch_admin'] },
+  { icon: Bell, label: "Notices", href: "/dashboard/notices", roles: ['super_admin', 'admin', 'sport_admin', 'trainer', 'student', 'branch_admin'] },
+  { icon: Shield, label: "Audit Logs", href: "/dashboard/audit-logs", roles: ['super_admin', 'admin'] },
+  { icon: Shield, label: "User Roles", href: "/dashboard/users", roles: ['super_admin', 'admin', 'branch_admin'] },
 ]
 
-function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
-  const { branches, selectedBranch, setSelectedBranch } = useBranch()
+function SidebarContent({ role, roleLabel, userRecord, pathname, isMobile, setIsOpen, handleLogout }) {
+  const { branches, selectedBranch, setSelectedBranch, canSwitchBranch } = useBranch()
+  const { sports, selectedSport, setSelectedSport, isKarate, canSwitchSport } = useSport()
+
+  // Filter nav items based on role & sport
+  const filteredNavItems = navItems
+    .filter(item => !role || item.roles.includes(role))
+    .filter(item => {
+      if (item.sportOnly === 'Karate' && !isKarate && selectedSport !== 'all') return false
+      return true
+    })
+
   return (
     <div className="flex flex-col h-full bg-[#0A1F30] border-r border-white/[0.08] p-8 relative overflow-hidden group/sidebar">
       {/* Matrix Scanline Effect */}
@@ -42,7 +58,7 @@ function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
       {/* Subtle grid overlay */}
       <div className="absolute inset-0 grid-overlay-dense opacity-30 pointer-events-none" />
       
-      <div className="flex items-center gap-4 mb-16 px-2 group cursor-pointer relative z-10">
+      <div className="flex items-center gap-4 mb-6 px-2 group cursor-pointer relative z-10">
          <motion.div 
           whileHover={{ scale: 1.1, rotate: 5 }}
           whileTap={{ scale: 0.95 }}
@@ -62,21 +78,64 @@ function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
         </div>
       </div>
 
-      <div className="px-5 mb-4 relative z-10">
-        <label className="text-[10px] uppercase tracking-wider text-white/50 font-black mb-1.5 block">Global Branch Filter</label>
-        <div className="relative">
-          <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gold/80" />
-          <select
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-            className="w-full h-10 pl-9 pr-4 bg-white/5 border border-white/10 rounded-lg text-xs font-semibold text-white outline-none focus:border-gold/50 focus:bg-white/10 transition-all cursor-pointer shadow-sm appearance-none"
-          >
-            <option value="all" className="text-black">Overall Operations</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id} className="text-black">{b.name}</option>
-            ))}
-          </select>
+      {/* ── User Profile & Role Badge ── */}
+      {userRecord && (
+        <div className="mb-6 px-4 py-3 bg-white/[0.03] border border-white/[0.05] rounded-xl flex items-center gap-3 relative z-10">
+          <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center font-bold text-gold text-sm shadow-[0_0_15px_rgba(197,160,89,0.15)]">
+            {userRecord.full_name?.charAt(0).toUpperCase() || 'U'}
+          </div>
+          <div className="flex flex-col overflow-hidden">
+            <span className="text-xs font-bold text-white truncate">{userRecord.full_name}</span>
+            <span className="text-[9px] font-black uppercase tracking-wider text-gold/80 mt-0.5">{roleLabel}</span>
+          </div>
         </div>
+      )}
+
+      {/* ── Global Filters ── */}
+      <div className="space-y-3 mb-6 relative z-10">
+        {/* Sport Filter */}
+        {sports.length > 0 && (
+          <div className="px-2">
+            <label className="text-[10px] uppercase tracking-wider text-white/50 font-black mb-1.5 block">Sport</label>
+            <div className="relative">
+              <Dumbbell size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gold/80" />
+              <select
+                value={selectedSport}
+                onChange={(e) => setSelectedSport(e.target.value)}
+                disabled={!canSwitchSport}
+                className={`w-full h-10 pl-9 pr-4 bg-white/5 border border-white/10 rounded-lg text-xs font-semibold text-white outline-none focus:border-gold/50 focus:bg-white/10 transition-all cursor-pointer shadow-sm appearance-none ${!canSwitchSport ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                {canSwitchSport && <option value="all" className="text-black">All Sports</option>}
+                {sports.map((s) => (
+                  <option key={s.id} value={s.id} className="text-black">
+                    {s.sport_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Branch Filter */}
+        {branches.length > 0 && (
+          <div className="px-2">
+            <label className="text-[10px] uppercase tracking-wider text-white/50 font-black mb-1.5 block">Branch</label>
+            <div className="relative">
+              <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gold/80" />
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                disabled={!canSwitchBranch}
+                className={`w-full h-10 pl-9 pr-4 bg-white/5 border border-white/10 rounded-lg text-xs font-semibold text-white outline-none focus:border-gold/50 focus:bg-white/10 transition-all cursor-pointer shadow-sm appearance-none ${!canSwitchBranch ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                {canSwitchBranch && <option value="all" className="text-black">All Branches</option>}
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id} className="text-black">{b.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 flex flex-col gap-1.5 relative z-10 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
@@ -85,9 +144,7 @@ function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
            <p className="text-[8px] uppercase tracking-[0.5em] text-white/20 font-black italic whitespace-nowrap">Navigation</p>
            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
         </div>
-        {navItems
-          .filter(item => !role || item.roles.includes(role))
-          .map((item) => {
+        {filteredNavItems.map((item) => {
             const isActive = pathname === item.href
             return (
               <Link key={item.href} href={item.href} onClick={() => isMobile && setIsOpen(false)}>
@@ -169,13 +226,12 @@ function SidebarContent({ role, pathname, isMobile, setIsOpen, handleLogout }) {
       </div>
     </div>
   )
-
 }
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [role, setRole] = useState(null)
+  const { role, roleLabel, userRecord, loading } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
@@ -189,17 +245,6 @@ export default function Sidebar() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  useEffect(() => {
-    const fetchRole = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        const r = await getUserRole(session.user.id)
-        setRole(r)
-      }
-    }
-    fetchRole()
-  }, [])
-
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push("/")
@@ -210,6 +255,13 @@ export default function Sidebar() {
     closed: { x: "-100%", opacity: 0, transition: { type: "spring", stiffness: 300, damping: 30 } }
   }
 
+  if (loading) {
+    return (
+      <aside className="w-72 h-screen sticky top-0 z-50 bg-[#0A1F30] border-r border-white/[0.08] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-gold/30 border-t-gold animate-spin" />
+      </aside>
+    )
+  }
 
   return (
     <>
@@ -232,7 +284,15 @@ export default function Sidebar() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <aside className="w-72 h-screen sticky top-0 z-50">
-          <SidebarContent role={role} pathname={pathname} isMobile={isMobile} setIsOpen={setIsOpen} handleLogout={handleLogout} />
+          <SidebarContent 
+            role={role} 
+            roleLabel={roleLabel} 
+            userRecord={userRecord} 
+            pathname={pathname} 
+            isMobile={isMobile} 
+            setIsOpen={setIsOpen} 
+            handleLogout={handleLogout} 
+          />
         </aside>
       )}
 
@@ -254,7 +314,15 @@ export default function Sidebar() {
               exit="closed"
               className="fixed top-0 left-0 w-80 h-full z-[80] shadow-[10px_0_40px_rgba(0,0,0,0.5)]"
             >
-              <SidebarContent role={role} pathname={pathname} isMobile={isMobile} setIsOpen={setIsOpen} handleLogout={handleLogout} />
+              <SidebarContent 
+                role={role} 
+                roleLabel={roleLabel} 
+                userRecord={userRecord} 
+                pathname={pathname} 
+                isMobile={isMobile} 
+                setIsOpen={setIsOpen} 
+                handleLogout={handleLogout} 
+              />
               <motion.button 
                 onClick={() => setIsOpen(false)}
                 whileHover={{ scale: 1.1, rotate: 90 }}

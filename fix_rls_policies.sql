@@ -167,3 +167,79 @@ DROP POLICY IF EXISTS "Allow authenticated insert audit_logs" ON public.audit_lo
 
 CREATE POLICY "Allow authenticated read audit_logs"   ON public.audit_logs FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Allow authenticated insert audit_logs" ON public.audit_logs FOR INSERT TO authenticated WITH CHECK (true);
+
+-- ── TOURNAMENT_PARTICIPANTS ──
+ALTER TABLE public.tournament_participants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow authenticated read tournament_participants" ON public.tournament_participants;
+DROP POLICY IF EXISTS "Allow authenticated insert tournament_participants" ON public.tournament_participants;
+DROP POLICY IF EXISTS "Allow authenticated update tournament_participants" ON public.tournament_participants;
+DROP POLICY IF EXISTS "Allow authenticated delete tournament_participants" ON public.tournament_participants;
+
+CREATE POLICY "Allow authenticated read tournament_participants"   ON public.tournament_participants FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow authenticated insert tournament_participants" ON public.tournament_participants FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow authenticated update tournament_participants" ON public.tournament_participants FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow authenticated delete tournament_participants" ON public.tournament_participants FOR DELETE TO authenticated USING (true);
+
+-- ── QUICK_COLLECTIONS ──
+ALTER TABLE public.quick_collections ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow authenticated read quick_collections" ON public.quick_collections;
+DROP POLICY IF EXISTS "Allow authenticated insert quick_collections" ON public.quick_collections;
+DROP POLICY IF EXISTS "Allow authenticated update quick_collections" ON public.quick_collections;
+DROP POLICY IF EXISTS "Allow authenticated delete quick_collections" ON public.quick_collections;
+
+CREATE POLICY "Allow authenticated read quick_collections"   ON public.quick_collections FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow authenticated insert quick_collections" ON public.quick_collections FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow authenticated update quick_collections" ON public.quick_collections FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow authenticated delete quick_collections" ON public.quick_collections FOR DELETE TO authenticated USING (true);
+
+-- ── BRANCH_MANAGERS ──
+ALTER TABLE public.branch_managers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow authenticated read branch_managers" ON public.branch_managers;
+DROP POLICY IF EXISTS "Allow authenticated insert branch_managers" ON public.branch_managers;
+DROP POLICY IF EXISTS "Allow authenticated update branch_managers" ON public.branch_managers;
+DROP POLICY IF EXISTS "Allow authenticated delete branch_managers" ON public.branch_managers;
+
+CREATE POLICY "Allow authenticated read branch_managers"   ON public.branch_managers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow authenticated insert branch_managers" ON public.branch_managers FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow authenticated update branch_managers" ON public.branch_managers FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow authenticated delete branch_managers" ON public.branch_managers FOR DELETE TO authenticated USING (true);
+
+-- ── SPORT_ADMIN_ASSIGNMENTS ──
+ALTER TABLE public.sport_admin_assignments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow authenticated read sport_admin_assignments" ON public.sport_admin_assignments;
+DROP POLICY IF EXISTS "Allow authenticated insert sport_admin_assignments" ON public.sport_admin_assignments;
+DROP POLICY IF EXISTS "Allow authenticated update sport_admin_assignments" ON public.sport_admin_assignments;
+DROP POLICY IF EXISTS "Allow authenticated delete sport_admin_assignments" ON public.sport_admin_assignments;
+
+CREATE POLICY "Allow authenticated read sport_admin_assignments"   ON public.sport_admin_assignments FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow authenticated insert sport_admin_assignments" ON public.sport_admin_assignments FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow authenticated update sport_admin_assignments" ON public.sport_admin_assignments FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow authenticated delete sport_admin_assignments" ON public.sport_admin_assignments FOR DELETE TO authenticated USING (true);
+
+-- ── SPORTS ──
+ALTER TABLE public.sports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow authenticated read sports" ON public.sports;
+DROP POLICY IF EXISTS "Allow authenticated insert sports" ON public.sports;
+DROP POLICY IF EXISTS "Allow authenticated update sports" ON public.sports;
+DROP POLICY IF EXISTS "Allow authenticated delete sports" ON public.sports;
+DROP POLICY IF EXISTS "sports_select" ON public.sports;
+DROP POLICY IF EXISTS "sports_write" ON public.sports;
+
+CREATE POLICY "sports_select" ON public.sports FOR SELECT TO authenticated USING (true);
+CREATE POLICY "sports_write" ON public.sports FOR ALL TO authenticated
+  USING (public.get_my_role() IN ('super_admin', 'admin', 'branch_admin'))
+  WITH CHECK (public.get_my_role() IN ('super_admin', 'admin', 'branch_admin'));
+
+-- ── BRANCH_SPORTS ──
+ALTER TABLE public.branch_sports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow authenticated read branch_sports" ON public.branch_sports;
+DROP POLICY IF EXISTS "Allow authenticated insert branch_sports" ON public.branch_sports;
+DROP POLICY IF EXISTS "Allow authenticated update branch_sports" ON public.branch_sports;
+DROP POLICY IF EXISTS "Allow authenticated delete branch_sports" ON public.branch_sports;
+DROP POLICY IF EXISTS "branch_sports_select" ON public.branch_sports;
+DROP POLICY IF EXISTS "branch_sports_write" ON public.branch_sports;
+
+CREATE POLICY "branch_sports_select" ON public.branch_sports FOR SELECT TO authenticated USING (true);
+CREATE POLICY "branch_sports_write" ON public.branch_sports FOR ALL TO authenticated
+  USING (public.get_my_role() IN ('super_admin', 'admin', 'branch_admin'))
+  WITH CHECK (public.get_my_role() IN ('super_admin', 'admin', 'branch_admin'));

@@ -19,10 +19,14 @@ import { supabase, getTrainers } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { Badge } from "@/components/ui/badge"
 import { useBranch } from "@/context/BranchContext"
+import { useSport } from "@/context/SportContext"
+import { useAuth } from "@/context/AuthContext"
 
 export default function BatchesPage() {
   const [batches, setBatches] = useState([])
   const { branches, selectedBranch } = useBranch()
+  const { selectedSport, sports } = useSport()
+  const { permissions } = useAuth()
   const [trainers, setTrainers] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -30,8 +34,13 @@ export default function BatchesPage() {
   const [open, setOpen] = useState(false)
   const [editingBatch, setEditingBatch] = useState(null)
 
-  const { register, handleSubmit, reset, setValue, watch } = useForm()
+  const { register, handleSubmit, reset, setValue, watch } = useForm({
+    defaultValues: {
+      sportId: ''
+    }
+  })
   const watchedBranchId = watch("branchId")
+  const watchedSportId = watch("sportId")
 
   useEffect(() => {
     async function init() {
@@ -43,15 +52,28 @@ export default function BatchesPage() {
 
   useEffect(() => {
     fetchBatches()
-  }, [selectedBranch])
+  }, [selectedBranch, selectedSport, permissions])
 
   async function fetchBatches() {
+    if (!permissions) return
     setLoading(true)
     let query = supabase
       .from('batches')
-      .select('*, branches(name), trainers(users(full_name)), students:students(count)')
+      .select('*, branches(name), trainers(users(full_name)), sports(sport_name), student_batches:student_batches(count)')
       .order('created_at', { ascending: false })
-    if (selectedBranch !== 'all') query = query.eq('branch_id', selectedBranch)
+
+    if (selectedBranch !== 'all') {
+      query = query.eq('branch_id', selectedBranch)
+    } else if (permissions.branchIds && permissions.branchIds.length > 0) {
+      query = query.in('branch_id', permissions.branchIds)
+    }
+
+    if (selectedSport !== 'all') {
+      query = query.eq('sport_id', selectedSport)
+    } else if (permissions.role === 'sport_admin' && permissions.sportIds?.length > 0) {
+      query = query.in('sport_id', permissions.sportIds)
+    }
+
     const { data } = await query
     if (data) setBatches(data)
     setLoading(false)
@@ -61,6 +83,7 @@ export default function BatchesPage() {
     setEditingBatch(batch)
     setValue("batchName", batch.batch_name)
     setValue("branchId", batch.branch_id)
+    setValue("sportId", batch.sport_id || '')
     setValue("trainerId", batch.trainer_id || '')
     setValue("startTime", batch.start_time)
     setValue("endTime", batch.end_time)
@@ -72,6 +95,9 @@ export default function BatchesPage() {
   const openCreate = () => {
     setEditingBatch(null)
     reset()
+    if (selectedSport !== 'all') {
+      setValue("sportId", selectedSport)
+    }
     setOpen(true)
   }
 
@@ -82,6 +108,7 @@ export default function BatchesPage() {
       const payload = {
         batch_name: formData.batchName,
         branch_id: formData.branchId,
+        sport_id: formData.sportId || null,
         trainer_id: formData.trainerId || null,
         start_time: formData.startTime,
         end_time: formData.endTime,
@@ -129,7 +156,8 @@ export default function BatchesPage() {
 
   const filtered = batches.filter(b =>
     b.batch_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.branches?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    b.branches?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    b.sports?.sport_name?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   return (
@@ -221,7 +249,14 @@ export default function BatchesPage() {
                         <Layers size={16} />
                       </div>
                       <div>
-                        <p className="font-semibold text-sm text-[#0A1F30]">{batch.batch_name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm text-[#0A1F30]">{batch.batch_name}</p>
+                          {batch.sports && (
+                            <Badge variant="outline" className="text-[8px] px-1.5 py-0 font-bold tracking-tight bg-[#C5A059]/10 text-[#C5A059] border-[#C5A059]/20">
+                              {batch.sports.sport_name}
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-[10px] text-gray-400 font-mono mt-0.5">ID: {batch.id.slice(0,8)}</p>
                       </div>
                     </div>
@@ -237,7 +272,7 @@ export default function BatchesPage() {
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       <Users size={14} className="text-gray-400" />
-                      <span className="text-sm font-medium text-[#0A1F30]">{batch.students?.[0]?.count || 0}</span>
+                      <span className="text-sm font-medium text-[#0A1F30]">{batch.student_batches?.[0]?.count || 0}</span>
                       <span className="text-xs text-gray-400">/ {batch.max_students}</span>
                     </div>
                   </TableCell>
@@ -279,6 +314,13 @@ export default function BatchesPage() {
               <Input {...register("batchName", { required: true })} placeholder="e.g. Morning Karate A" className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm" />
             </div>
             <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2 col-span-2">
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Sport Enrollment <span className="text-red-500">*</span></label>
+                <select {...register("sportId", { required: true })} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">
+                  <option value="">Select Sport</option>
+                  {sports.map(s => <option key={s.id} value={s.id}>{s.sport_name}</option>)}
+                </select>
+              </div>
               <div className="space-y-2">
                 <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Branch</label>
                 <select {...register("branchId", { required: true })} className="w-full bg-gray-50 border border-gray-200 rounded-lg h-10 px-4 text-sm text-[#0A1F30] outline-none focus:border-[#C5A059]">

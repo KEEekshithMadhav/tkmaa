@@ -23,7 +23,23 @@ export default function ProfilePage() {
         .select('*')
         .eq('id', session.user.id)
         .single()
-      setUser({ ...data, email: session.user.email })
+      
+      let studentData = null
+      if (data?.role === 'student') {
+        const { data: sData } = await supabase
+          .from('students')
+          .select('id, weight, height')
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+        studentData = sData
+      }
+
+      setUser({ 
+        ...data, 
+        email: session.user.email,
+        weight: studentData?.weight || '',
+        height: studentData?.height || ''
+      })
     }
     setLoading(false)
   }
@@ -41,20 +57,44 @@ export default function ProfilePage() {
     setUpdating(true)
     setMsg({ type: '', text: '' })
 
-    const { error } = await supabase
-      .from('users')
-      .update({
-        full_name: user.full_name,
-        phone: user.phone
-      })
-      .eq('id', user.id)
+    try {
+      if (user.role === 'student') {
+        if (!user.weight || parseFloat(user.weight) <= 0) {
+          throw new Error('Weight is mandatory and must be greater than 0.')
+        }
+        if (!user.height || parseFloat(user.height) <= 0) {
+          throw new Error('Height is mandatory and must be greater than 0.')
+        }
+      }
 
-    if (error) {
-      setMsg({ type: 'error', text: error.message })
-    } else {
+      const { error: userError } = await supabase
+        .from('users')
+        .update({
+          full_name: user.full_name,
+          phone: user.phone
+        })
+        .eq('id', user.id)
+
+      if (userError) throw userError
+
+      if (user.role === 'student') {
+        const { error: studentError } = await supabase
+          .from('students')
+          .update({
+            weight: parseFloat(user.weight) || null,
+            height: parseFloat(user.height) || null
+          })
+          .eq('user_id', user.id)
+
+        if (studentError) throw studentError
+      }
+
       setMsg({ type: 'success', text: 'Profile updated successfully!' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.message })
+    } finally {
+      setUpdating(false)
     }
-    setUpdating(false)
   }
 
   const handleChangePassword = async (e) => {
@@ -139,6 +179,32 @@ export default function ProfilePage() {
                   className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm"
                 />
               </div>
+              {user?.role === 'student' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Weight (kg) <span className="text-red-500">*</span></label>
+                    <Input 
+                      type="number"
+                      step="0.1"
+                      required
+                      value={user?.weight || ''} 
+                      onChange={e => setUser({...user, weight: e.target.value})}
+                      className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">Height (cm) <span className="text-red-500">*</span></label>
+                    <Input 
+                      type="number"
+                      step="0.1"
+                      required
+                      value={user?.height || ''} 
+                      onChange={e => setUser({...user, height: e.target.value})}
+                      className="bg-gray-50 border-gray-200 rounded-lg h-10 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <label className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold block">System Role</label>
                 <div className="h-10 flex items-center px-4 bg-gray-50 border border-dashed border-gray-200 rounded-lg text-[#C5A059] font-bold uppercase text-xs tracking-widest">

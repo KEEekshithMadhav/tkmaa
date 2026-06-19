@@ -3,416 +3,531 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  MapPin,
-  Users,
-  DollarSign,
-  Download,
-  Settings,
-  Calendar,
-  AlertCircle,
-  TrendingUp,
-  ChevronRight,
+  MapPin, Users, IndianRupee, AlertCircle, Calendar, RefreshCw,
+  Loader2, Clock
 } from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardAction,
-} from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/context/AuthContext'
 
-// ─── Animation Variants ─────────────────────────────────
 const stagger = {
   hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.07, delayChildren: 0.15 },
-  },
+  visible: { opacity: 1, transition: { staggerChildren: 0.07, delayChildren: 0.1 } },
 }
-
 const fadeUp = {
-  hidden: { opacity: 0, y: 24, filter: 'blur(6px)' },
-  visible: {
-    opacity: 1,
-    y: 0,
-    filter: 'blur(0px)',
-    transition: { type: 'spring', stiffness: 120, damping: 18 },
-  },
+  hidden: { opacity: 0, y: 20, filter: 'blur(4px)' },
+  visible: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { type: 'spring', stiffness: 130, damping: 18 } },
 }
 
-// ─── Mock / Fallback Data ────────────────────────────────
-const MOCK = {
-  branch: {
-    name: 'Downtown Dojo',
-    label: 'Branch A',
-  },
-  totalMembers: {
-    count: 1284,
-    trend: '+12% from last month',
-  },
-  feeCollection: {
-    collected: 42900,
-    target: 45000,
-  },
-  groups: [
-    {
-      id: 1,
-      name: 'Elite Kumite',
-      level: 'Adv',
-      schedule: 'Mon, Wed, Fri • 18:00',
-      peps: 24,
-    },
-    {
-      id: 2,
-      name: 'Junior Dragons',
-      level: 'Beg',
-      schedule: 'Tue, Thu • 16:30',
-      peps: 42,
-    },
-  ],
-  trainers: [
-    { id: 1, name: 'Sensei Hiroshi', initials: 'SH' },
-    { id: 2, name: 'Master Sarah', initials: 'MS' },
-  ],
-  recentFees: [
-    { id: 1, member: 'James Wilson', plan: 'Premium Unlimited', amount: 150.0, status: 'paid' },
-    { id: 2, member: 'Elena Rodriguez', plan: 'Junior Basic', amount: 85.0, status: 'paid' },
-    { id: 3, member: 'Marcus Chen', plan: 'Standard Monthly', amount: 110.0, status: 'overdue' },
-    { id: 4, member: 'Sophia Blake', plan: 'Elite Membership', amount: 200.0, status: 'paid' },
-  ],
-  beltDistribution: [
-    { belt: 'Black Belts', count: 42, color: '#1a1a1a', pct: 4.5 },
-    { belt: 'Brown Belts', count: 86, color: '#8B4513', pct: 9.2 },
-    { belt: 'Green / Blue Belts', count: 218, color: '#22c55e', pct: 23.3 },
-    { belt: 'White / Yellow Belts', count: 938, color: '#eab308', pct: 100 },
-  ],
-}
-
-// ─── Component ───────────────────────────────────────────
 export function PartnerDashboard() {
-  const [data, setData] = useState(MOCK)
+  const { can, permissions, loading: authLoading } = useAuth()
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [trainerInfo, setTrainerInfo] = useState(null)
+  const [branch, setBranch] = useState(null)
+  const [students, setStudents] = useState([])
+  const [payments, setPayments] = useState([])
+  const [beltCounts, setBeltCounts] = useState([])
+  const [sportCounts, setSportCounts] = useState([])
+  const [trainerSports, setTrainerSports] = useState([])
+  const [batches, setBatches] = useState([])
+  const [todayAttendance, setTodayAttendance] = useState([])
+
+  const canSeePayments = can('FEE_TRACKING')
 
   useEffect(() => {
-    async function load() {
-      try {
-        // Attempt to pull live data — gracefully fall back to MOCK
-        const { data: students } = await supabase
-          .from('students')
-          .select('id, belt_levels(name)')
-        if (students && students.length > 0) {
-          // We have live data — you can enrich `data` here
-        }
-      } catch {
-        // silent — keep mock
-      } finally {
-        setLoading(false)
-      }
+    if (!authLoading && permissions) {
+      loadData()
     }
-    load()
-  }, [])
+  }, [authLoading, permissions])
 
-  const feeProgress = Math.round(
-    (data.feeCollection.collected / data.feeCollection.target) * 100
-  )
+  async function loadData() {
+    setLoading(true)
+    setError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setError('Not logged in'); setLoading(false); return }
 
-  // ───────────────────────────────────────────────────────
+      const userId = session.user.id
+
+      // 1. Get this trainer's record
+      const { data: trainer, error: trainerErr } = await supabase
+        .from('trainers')
+        .select('id, branch_id, experience_yrs, specialization, users(full_name, email, phone), branches(id, name, location, phone), trainer_sports(sport_id, sports(sport_name))')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (trainerErr) throw trainerErr
+
+      if (!trainer || !trainer.branch_id) {
+        setError('Your trainer profile has no branch assigned yet. Please contact admin.')
+        setLoading(false)
+        return
+      }
+
+      setTrainerInfo(trainer)
+      setBranch(trainer.branches)
+
+      const sportsList = trainer.trainer_sports?.map(ts => ts.sports?.sport_name).filter(Boolean) || []
+      setTrainerSports(sportsList)
+
+      const branchId = trainer.branch_id
+      const trainerId = trainer.id
+
+      // 2. Batches ONLY assigned to this trainer
+      const { data: branchBatches } = await supabase
+        .from('batches')
+        .select('id, batch_name, start_time, end_time, max_students')
+        .eq('trainer_id', trainerId)
+        .eq('is_active', true)
+        .order('start_time')
+      const batchList = branchBatches || []
+      setBatches(batchList)
+
+      // 3. Students ONLY in this trainer's assigned batches
+      const batchIds = batchList.map(b => b.id)
+      let studentList = []
+
+      if (batchIds.length > 0) {
+        const { data: sbData } = await supabase
+          .from('student_batches')
+          .select('student_id')
+          .in('batch_id', batchIds)
+        const studentIds = sbData?.map(sb => sb.student_id) || []
+
+        if (studentIds.length > 0) {
+          const { data: activeStudents } = await supabase
+            .from('students')
+            .select('id, join_date, is_active, users(full_name), belt_levels(id, name, color, hex, order_rank), student_sports(sport_id, sports(sport_name))')
+            .in('id', studentIds)
+            .eq('is_active', true)
+            .order('join_date', { ascending: false })
+          studentList = activeStudents || []
+        }
+      }
+
+      setStudents(studentList)
+      buildBeltCounts(studentList)
+      buildSportCounts(studentList)
+
+      // 4. Payments ONLY if authorized (Fee Tracking permission)
+      if (canSeePayments) {
+        const { data: branchPayments } = await supabase
+          .from('payments')
+          .select('id, amount, month, status, payment_date, payment_mode, students(users(full_name))')
+          .eq('branch_id', branchId)
+          .order('created_at', { ascending: false })
+          .limit(10)
+        setPayments(branchPayments || [])
+      }
+
+      // 5. Today's attendance for these students
+      const today = new Date().toISOString().split('T')[0]
+      const studentIds = studentList.map(s => s.id)
+      if (studentIds.length > 0) {
+        const { data: attData } = await supabase
+          .from('attendance')
+          .select('student_id, status')
+          .in('student_id', studentIds)
+          .eq('date', today)
+        setTodayAttendance(attData || [])
+      }
+
+    } catch (err) {
+      console.error('PartnerDashboard error:', err)
+      setError(err.message || 'Failed to load data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function buildBeltCounts(studentList) {
+    const counts = {}
+    studentList.forEach(s => {
+      const isKarateStudent = s.student_sports?.some(ss => ss.sports?.sport_name === 'Karate') || s.belt_levels
+      if (!isKarateStudent) return
+      
+      const belt = s.belt_levels?.name || 'White'
+      const hex = s.belt_levels?.hex || '#FFFFFF'
+      if (!counts[belt]) counts[belt] = { belt, count: 0, color: hex, rank: s.belt_levels?.order_rank || 1 }
+      counts[belt].count++
+    })
+    const arr = Object.values(counts).sort((a, b) => b.rank - a.rank)
+    const max = arr[0]?.count || 1
+    setBeltCounts(arr.map(b => ({ ...b, pct: Math.round((b.count / max) * 100) })))
+  }
+
+  function buildSportCounts(studentList) {
+    const counts = {}
+    studentList.forEach(s => {
+      const sSports = s.student_sports || []
+      sSports.forEach(ss => {
+        const name = ss.sports?.sport_name
+        if (name) {
+          counts[name] = (counts[name] || 0) + 1
+        }
+      })
+    })
+    const arr = Object.entries(counts).map(([name, count]) => ({ name, count }))
+    const max = Math.max(...arr.map(x => x.count), 1)
+    setSportCounts(arr.map(x => ({ ...x, pct: Math.round((x.count / max) * 100) })).sort((a, b) => b.count - a.count))
+  }
+
+  const totalStudents = students.length
+  const paidAmount = payments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount), 0)
+  const pendingCount = payments.filter(p => p.status === 'pending' || p.status === 'overdue').length
+  const presentToday = todayAttendance.filter(a => a.status === 'present').length
+
+  if (loading || authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="size-8 animate-spin text-gold" />
+          <p className="text-sm font-mono uppercase tracking-widest text-muted-foreground">Loading Your Dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-center">
+        <div className="text-4xl">⚠️</div>
+        <h2 className="text-xl font-bold text-[#0A1F30]">Dashboard Error</h2>
+        <p className="text-sm text-muted-foreground max-w-sm">{error}</p>
+        <Button onClick={loadData} className="gap-2 bg-[#0A1F30] text-white rounded-xl">
+          <RefreshCw className="size-4" /> Retry
+        </Button>
+      </div>
+    )
+  }
+
   return (
-    <motion.div
-      variants={stagger}
-      initial="hidden"
-      animate="visible"
-      className="space-y-6"
-    >
-      {/* ── Header ─────────────────────────────────────── */}
-      <motion.header variants={fadeUp} className="space-y-1">
-        <Badge
-          variant="outline"
-          className="mb-2 gap-1.5 rounded-full border-gold/30 bg-gold/5 px-3 py-1 text-xs font-semibold text-gold-dark"
-        >
-          <MapPin className="size-3" />
-          {data.branch.name} ({data.branch.label})
-        </Badge>
+    <motion.div variants={stagger} initial="hidden" animate="visible" className="space-y-6">
 
-        <h1 className="font-heading text-3xl font-bold tracking-tight text-[#0A1F30]">
-          Branch Overview
-        </h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          High level insights for the {data.branch.name}. Monitor membership
-          growth, financial health, and training personnel performance.
-        </p>
+      {/* ── Header ── */}
+      <motion.header variants={fadeUp} className="space-y-1">
+        <Badge variant="outline" className="mb-2 gap-1.5 rounded-full border-gold/30 bg-gold/5 px-3 py-1 text-xs font-semibold text-gold-dark">
+          <MapPin className="size-3" />
+          {branch?.name} · {branch?.location}
+        </Badge>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-heading text-3xl font-bold tracking-tight text-[#0A1F30]">
+              {branch?.name} — Trainer Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Trainer: <span className="font-semibold text-[#0A1F30]">{trainerInfo?.users?.full_name}</span>
+              {trainerSports.length > 0 && (
+                <span className="inline-flex gap-1.5 ml-2.5">
+                  {trainerSports.map(sport => (
+                    <Badge key={sport} variant="secondary" className="text-[9px] bg-gold/15 text-gold-dark hover:bg-gold/25 font-bold uppercase tracking-wider py-0.5 px-2 rounded-md">
+                      {sport}
+                    </Badge>
+                  ))}
+                </span>
+              )}
+            </p>
+          </div>
+          <Button onClick={loadData} variant="outline" size="sm" className="gap-2 rounded-xl shrink-0">
+            <RefreshCw className="size-3.5" /> Refresh
+          </Button>
+        </div>
       </motion.header>
 
-      {/* ── Top KPI Row ────────────────────────────────── */}
-      <div className="grid gap-5 sm:grid-cols-2">
-        {/* Total Members */}
+      {/* ── KPI Row ── */}
+      <div className={`grid gap-4 sm:grid-cols-2 ${canSeePayments ? 'lg:grid-cols-4' : 'lg:grid-cols-2'}`}>
+        {/* Students */}
         <motion.div variants={fadeUp}>
           <Card className="rounded-2xl border-border/60 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                <Users className="size-4 text-gold" />
-                Total Members
+                <Users className="size-4 text-gold" /> Active Students
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex items-end justify-between">
-              <span className="font-heading text-4xl font-extrabold tracking-tight text-[#0A1F30]">
-                {data.totalMembers.count.toLocaleString()}
-              </span>
-              <span className="mb-1 flex items-center gap-1 text-xs font-medium text-emerald-600">
-                <TrendingUp className="size-3.5" />
-                {data.totalMembers.trend}
-              </span>
+            <CardContent>
+              <span className="font-heading text-4xl font-extrabold text-[#0A1F30]">{totalStudents}</span>
+              <p className="text-xs text-muted-foreground mt-1">in your assigned batches</p>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Monthly Fee Collection — dark accent */}
+        {/* Present Today */}
         <motion.div variants={fadeUp}>
-          <Card className="rounded-2xl border-transparent bg-[#0A1F30] text-white shadow-lg ring-0">
+          <Card className="rounded-2xl border-border/60 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/50">
-                <DollarSign className="size-4 text-gold" />
-                Monthly Fee Collection
+              <CardTitle className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                <Calendar className="size-4 text-emerald-500" /> Present Today
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-end justify-between">
-                <span className="font-heading text-4xl font-extrabold tracking-tight text-gold">
-                  ${data.feeCollection.collected.toLocaleString()}
-                </span>
-                <span className="mb-1 text-xs text-white/50">
-                  Target:{' '}
-                  <span className="text-white/80">
-                    ${data.feeCollection.target.toLocaleString()}
-                  </span>
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${feeProgress}%` }}
-                  transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1], delay: 0.4 }}
-                  className="h-full rounded-full bg-gradient-to-r from-gold-dark via-gold to-gold-light"
-                />
-              </div>
+            <CardContent>
+              <span className="font-heading text-4xl font-extrabold text-emerald-600">{presentToday}</span>
+              <p className="text-xs text-muted-foreground mt-1">
+                of {totalStudents} students
+                {totalStudents > 0 && <> ({Math.round((presentToday / totalStudents) * 100)}%)</>}
+              </p>
             </CardContent>
           </Card>
         </motion.div>
+
+        {/* Fee Collected (Optional) */}
+        {canSeePayments && (
+          <motion.div variants={fadeUp}>
+            <Card className="rounded-2xl border-transparent bg-[#0A1F30] text-white shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/50">
+                  <IndianRupee className="size-4 text-gold" /> Fee Collected
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <span className="font-heading text-3xl font-extrabold text-gold">
+                  ₹{paidAmount.toLocaleString('en-IN')}
+                </span>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Pending Dues (Optional) */}
+        {canSeePayments && (
+          <motion.div variants={fadeUp}>
+            <Card className="rounded-2xl border-border/60 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                  <AlertCircle className="size-4 text-red-400" /> Pending Dues
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <span className="font-heading text-4xl font-extrabold text-red-500">{pendingCount}</span>
+                <p className="text-xs text-muted-foreground mt-1">students overdue</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
       </div>
 
-      {/* ── Middle Row: Active Groups + Lead Trainers ─── */}
+      {/* ── Batches + Belt Distribution ── */}
       <div className="grid gap-5 lg:grid-cols-3">
-        {/* Active Groups — 2 cols */}
+        {/* Batches — 2 cols */}
         <motion.div variants={fadeUp} className="lg:col-span-2">
-          <Card className="rounded-2xl border-border/60 shadow-sm">
+          <Card className="rounded-2xl border-border/60 shadow-sm h-full">
             <CardHeader>
               <CardTitle className="font-heading text-sm font-semibold text-[#0A1F30]">
-                Active Groups
+                Your Active Batches
               </CardTitle>
-              <CardAction>
-                <Button variant="ghost" size="icon-sm">
-                  <Settings className="size-4 text-muted-foreground" />
-                </Button>
-              </CardAction>
             </CardHeader>
             <CardContent className="space-y-3">
-              {data.groups.map((g) => (
-                <div
-                  key={g.id}
-                  className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 px-4 py-3 transition-colors hover:bg-muted/60"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-[#0A1F30]">
-                      {g.name}{' '}
-                      <span className="font-normal text-muted-foreground">
-                        ({g.level})
-                      </span>
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                      <Calendar className="size-3" />
-                      {g.schedule}
-                    </p>
-                  </div>
-                  <Badge
-                    variant="secondary"
-                    className="rounded-full bg-gold/10 px-2.5 text-[10px] font-black uppercase tracking-wider text-gold-dark"
-                  >
-                    {g.peps} peps
-                  </Badge>
+              {batches.length === 0 ? (
+                <div className="py-8 text-center">
+                  <p className="text-sm text-muted-foreground">No batches assigned to you yet.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Contact your Administrator.</p>
                 </div>
-              ))}
+              ) : (
+                batches.map(b => (
+                  <div key={b.id} className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 px-4 py-3 hover:bg-muted/60 transition-colors">
+                    <div>
+                      <p className="text-sm font-semibold text-[#0A1F30]">{b.batch_name || 'Unnamed Batch'}</p>
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="size-3" />
+                        {b.start_time?.slice(0, 5)} – {b.end_time?.slice(0, 5)}
+                      </p>
+                    </div>
+                    <Badge className="rounded-full bg-gold/10 text-gold-dark border-transparent text-[10px] font-black uppercase tracking-wider">
+                      Max {b.max_students}
+                    </Badge>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Lead Trainers — 1 col */}
+        {/* Belt Distribution / Sport Breakdown — 1 col */}
         <motion.div variants={fadeUp}>
-          <Card className="rounded-2xl border-border/60 shadow-sm">
-            <CardHeader>
-              <CardTitle className="font-heading text-sm font-semibold text-[#0A1F30]">
-                Lead Trainers
-              </CardTitle>
-              <CardAction>
-                <Button variant="ghost" size="icon-sm">
-                  <Settings className="size-4 text-muted-foreground" />
-                </Button>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {data.trainers.map((t) => (
-                <div key={t.id} className="flex items-center gap-3">
-                  {/* Avatar placeholder */}
-                  <div className="flex size-10 items-center justify-center rounded-full bg-[#0A1F30] text-xs font-bold text-gold">
-                    {t.initials}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-[#0A1F30]">
-                      {t.name}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Head Instructor
-                    </p>
-                  </div>
-                  <ChevronRight className="size-4 text-muted-foreground/50" />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          {trainerSports.includes('Karate') || trainerSports.length === 0 ? (
+            <Card className="rounded-2xl border-transparent bg-[#1B3022] text-white shadow-lg h-full">
+              <CardHeader>
+                <CardTitle className="font-heading text-sm font-semibold text-white/90">
+                  Belt Distribution
+                </CardTitle>
+                <p className="text-[10px] text-white/30 font-mono uppercase tracking-wider">{branch?.name}</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {beltCounts.length === 0 ? (
+                  <p className="text-xs text-white/30 py-4 text-center">No belt data available</p>
+                ) : (
+                  beltCounts.map(b => (
+                    <div key={b.belt} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-white/70">{b.belt} Belt</span>
+                        <span className="font-mono text-white/50">{b.count} students</span>
+                      </div>
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${b.pct}%` }}
+                          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 0.4 }}
+                          className="h-full rounded-full"
+                          style={{ backgroundColor: b.color === '#FFFFFF' ? '#d1d5db' : b.color }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="rounded-2xl border-transparent bg-[#0A1F30] text-white shadow-lg h-full">
+              <CardHeader>
+                <CardTitle className="font-heading text-sm font-semibold text-white/90">
+                  Sport Breakdown
+                </CardTitle>
+                <p className="text-[10px] text-white/30 font-mono uppercase tracking-wider">{branch?.name}</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {sportCounts.length === 0 ? (
+                  <p className="text-xs text-white/30 py-4 text-center">No students registered in sports yet.</p>
+                ) : (
+                  sportCounts.map(s => (
+                    <div key={s.name} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-white/70">{s.name}</span>
+                        <span className="font-mono text-white/50">{s.count} students</span>
+                      </div>
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${s.pct}%` }}
+                          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 0.4 }}
+                          className="h-full rounded-full bg-gold"
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          )}
         </motion.div>
       </div>
 
-      {/* ── Recent Fee Collections Table ───────────────── */}
+      {/* ── Recent Students ── */}
       <motion.div variants={fadeUp}>
         <Card className="rounded-2xl border-border/60 shadow-sm">
           <CardHeader>
             <CardTitle className="font-heading text-sm font-semibold text-[#0A1F30]">
-              Recent Fee Collections
+              Students under your instruction
             </CardTitle>
-            <CardAction>
-              <Button variant="link" size="sm" className="gap-1 text-xs text-gold-dark">
-                <Download className="size-3.5" />
-                Download Report
-              </Button>
-            </CardAction>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
+              {totalStudents} active members
+            </p>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/60">
-                    <th className="pb-2 pr-4 text-left text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                      Member
-                    </th>
-                    <th className="pb-2 pr-4 text-left text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                      Plan
-                    </th>
-                    <th className="pb-2 pr-4 text-right text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                      Amount
-                    </th>
-                    <th className="pb-2 text-right text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                      St.
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.recentFees.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="border-b border-border/30 last:border-0"
-                    >
-                      <td className="py-3 pr-4 font-medium text-[#0A1F30]">
-                        {row.member}
-                      </td>
-                      <td className="py-3 pr-4 text-muted-foreground">
-                        {row.plan}
-                      </td>
-                      <td className="py-3 pr-4 text-right font-mono text-sm font-semibold text-[#0A1F30]">
-                        ${row.amount.toFixed(2)}
-                      </td>
-                      <td className="py-3 text-right">
-                        <Badge
-                          variant={row.status === 'paid' ? 'default' : 'destructive'}
-                          className={
-                            row.status === 'paid'
-                              ? 'rounded-full bg-emerald-100 text-emerald-700 border-transparent'
-                              : 'rounded-full'
-                          }
-                        >
-                          {row.status}
-                        </Badge>
-                      </td>
+            {students.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No students in your batches yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60">
+                      <th className="pb-2 pr-4 text-left text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Name</th>
+                      <th className="pb-2 pr-4 text-left text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                        {trainerSports.includes('Karate') || trainerSports.length === 0 ? 'Belt' : 'Sports'}
+                      </th>
+                      <th className="pb-2 text-right text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Joined</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {students.slice(0, 8).map(s => (
+                      <tr key={s.id} className="border-b border-border/30 last:border-0 hover:bg-muted/30 transition-colors">
+                        <td className="py-3 pr-4 font-medium text-[#0A1F30]">
+                          {s.users?.full_name || '—'}
+                        </td>
+                        <td className="py-3 pr-4">
+                          {trainerSports.includes('Karate') || trainerSports.length === 0 ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span
+                                className="inline-block size-2.5 rounded-full border border-black/10"
+                                style={{ backgroundColor: s.belt_levels?.hex === '#FFFFFF' ? '#e5e7eb' : (s.belt_levels?.hex || '#e5e7eb') }}
+                              />
+                              <span className="text-xs text-muted-foreground">{s.belt_levels?.name || 'White'}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex gap-1.5 flex-wrap">
+                              {(s.student_sports || []).map(ss => (
+                                <Badge key={ss.sport_id} variant="outline" className="text-[9px] px-2 py-0.5 rounded-md border-gray-200 text-gray-600 bg-gray-50/50">
+                                  {ss.sports?.sport_name}
+                                </Badge>
+                              ))}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 text-right text-xs text-muted-foreground font-mono">
+                          {s.join_date ? new Date(s.join_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {students.length > 8 && (
+                  <p className="text-center text-xs text-muted-foreground mt-4 py-2">
+                    + {students.length - 8} more students · <a href="/dashboard/students" className="text-gold-dark hover:underline">View All</a>
+                  </p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* ── Bottom Row: Belt Distribution + Training Cycle */}
-      <div className="grid gap-5 lg:grid-cols-3">
-        {/* Belt Distribution — dark accent, 2 cols */}
-        <motion.div variants={fadeUp} className="lg:col-span-2">
-          <Card className="rounded-2xl border-transparent bg-[#1B3022] text-white shadow-lg ring-0">
-            <CardHeader>
-              <CardTitle className="font-heading text-sm font-semibold text-white/90">
-                Belt Distribution
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {data.beltDistribution.map((b) => (
-                <div key={b.belt} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-white/70">{b.belt}</span>
-                    <span className="font-mono text-white/50">
-                      {b.count} members
-                    </span>
-                  </div>
-                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${b.pct}%` }}
-                      transition={{
-                        duration: 1,
-                        ease: [0.16, 1, 0.3, 1],
-                        delay: 0.5,
-                      }}
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: b.color }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Next Training Cycle — info banner, 1 col */}
+      {/* ── Recent Payments (Optional) ── */}
+      {canSeePayments && payments.length > 0 && (
         <motion.div variants={fadeUp}>
-          <Card className="rounded-2xl border-gold/20 bg-gold/5 shadow-sm ring-0">
-            <CardContent className="flex flex-col gap-3 pt-5">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-gold/15">
-                <AlertCircle className="size-5 text-gold-dark" />
-              </div>
-              <div>
-                <h3 className="font-heading text-sm font-semibold text-[#0A1F30]">
-                  Next Training Cycle
-                </h3>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Summer Belt Evaluations begin in{' '}
-                  <span className="font-semibold text-gold-dark">~14 days</span>!
-                  All lead trainers must submit eligibility logs by Friday.
-                </p>
+          <Card className="rounded-2xl border-border/60 shadow-sm">
+            <CardHeader>
+              <CardTitle className="font-heading text-sm font-semibold text-[#0A1F30]">Recent Fee Collections</CardTitle>
+              <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">Branch only</p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60">
+                      <th className="pb-2 pr-4 text-left text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Student</th>
+                      <th className="pb-2 pr-4 text-left text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Month</th>
+                      <th className="pb-2 pr-4 text-right text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Amount</th>
+                      <th className="pb-2 text-right text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map(row => (
+                      <tr key={row.id} className="border-b border-border/30 last:border-0 hover:bg-muted/30 transition-colors">
+                        <td className="py-3 pr-4 font-medium text-[#0A1F30]">{row.students?.users?.full_name || '—'}</td>
+                        <td className="py-3 pr-4 text-muted-foreground text-xs">{row.month}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-sm font-semibold text-[#0A1F30]">
+                          ₹{Number(row.amount).toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3 text-right">
+                          <Badge className={
+                            row.status === 'paid'    ? 'rounded-full bg-emerald-100 text-emerald-700 border-transparent' :
+                            row.status === 'overdue' ? 'rounded-full bg-red-100 text-red-700 border-transparent' :
+                                                       'rounded-full bg-yellow-100 text-yellow-700 border-transparent'
+                          }>
+                            {row.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
         </motion.div>
-      </div>
+      )}
+
     </motion.div>
   )
 }

@@ -26,12 +26,16 @@ export const metadata = {
   keywords: "martial arts, academy management, karate, thammando, TKMAA",
 };
 
+import { AuthProvider } from "@/context/AuthContext";
+
 export default function RootLayout({ children }) {
   const fontVariables = `${fontSora.variable} ${fontHanken.variable} ${fontJetBrains.variable}`;
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <body className={`${fontVariables} font-sans bg-[#f7faf9] text-[#0A1F30] antialiased selection:bg-[#C5A059]/40 selection:text-[#0A1F30] min-h-full flex flex-col`}>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
         <Toaster 
           position="top-right" 
           richColors 

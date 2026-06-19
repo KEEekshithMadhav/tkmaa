@@ -10,13 +10,17 @@ import {
   Shield,
   Award,
   UserPlus,
-  Filter
+  Dumbbell,
+  TrendingUp,
+  Calendar
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { supabase } from '@/lib/supabase'
+import { supabase, getScopedStudents, getScopedTrainers } from '@/lib/supabase'
 import { useBranch } from '@/context/BranchContext'
+import { useSport } from '@/context/SportContext'
+import { useAuth } from '@/context/AuthContext'
 
 // ── Belt color map ──
 const BELT_COLORS = {
@@ -34,16 +38,6 @@ const ATT_COLORS = {
   good: '#22c55e',
   moderate: '#eab308',
   poor: '#ef4444',
-}
-
-// ── Mock Head Instructor ──
-const MOCK_HEAD_INSTRUCTOR = {
-  name: 'Master Elena Vance',
-  initials: 'EV',
-  rank: '5TH DAN BLACK BELT',
-  description:
-    'Head Admin and Chief Instructor of Central Branch. Over 15 years of disciplinary excellence in Shotokan Karate.',
-  online: true,
 }
 
 // ── Animation variants ──
@@ -91,20 +85,33 @@ function InitialsAvatar({ initials, size = 'md', bgColor, online }) {
   )
 }
 
+// ── Sport-specific feature labels ──
+const SPORT_FEATURES = {
+  'Karate': { label: 'Belt Distribution', icon: '🥋' },
+  'Dance': { label: 'Performances', icon: '💃' },
+  'Music': { label: 'Recitals', icon: '🎵' },
+  'Chess': { label: 'Rankings', icon: '♟️' },
+  'Yoga': { label: 'Sessions', icon: '🧘' },
+  'Skating': { label: 'Levels', icon: '⛸️' },
+}
+
 // ── Main component ──
 export function AdminDashboard() {
+  const { permissions } = useAuth()
   const { branches, selectedBranch } = useBranch()
+  const { selectedSport, selectedSportName, isKarate, selectedSportData } = useSport()
   const [students, setStudents] = useState([])
   const [trainers, setTrainers] = useState([])
   const [enrollment, setEnrollment] = useState({ total: 0, capacity: 0 })
-  const [headInstructor] = useState(MOCK_HEAD_INSTRUCTOR)
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({ totalStudents: 0, totalTrainers: 0, totalBatches: 0, revenue: 0 })
 
   useEffect(() => {
     async function fetchData() {
+      if (!permissions) return
       try {
-        await loadDataForBranch(selectedBranch)
+        await loadDataForFilters(selectedBranch, selectedSport)
       } catch (err) {
         console.error("Dashboard fetch error:", err)
       } finally {
@@ -112,19 +119,21 @@ export function AdminDashboard() {
       }
     }
     fetchData()
-  }, [])
+  }, [permissions])
 
   useEffect(() => {
-    if (!loading) loadDataForBranch(selectedBranch)
-  }, [selectedBranch])
+    if (!loading && permissions) loadDataForFilters(selectedBranch, selectedSport)
+  }, [selectedBranch, selectedSport, permissions])
 
-  async function loadDataForBranch(branchId) {
+  async function loadDataForFilters(branchId, sportId) {
+    if (!permissions) return
+
     // 1. Fetch Students
-    let sQuery = supabase.from('students').select('*, users(*), belt_levels(*)')
-    if (branchId !== 'all') sQuery = sQuery.eq('branch_id', branchId)
-    sQuery = sQuery.order('created_at', { ascending: false }).limit(10)
-    
-    const { data: studentData } = await sQuery
+    const { data: studentData } = await getScopedStudents(permissions, {
+      branchId,
+      sportId,
+      limit: 10
+    })
 
     if (studentData) {
       setStudents(
@@ -143,11 +152,11 @@ export function AdminDashboard() {
     }
 
     // 2. Fetch Trainers
-    let tQuery = supabase.from('trainers').select('*, users(*)')
-    if (branchId !== 'all') tQuery = tQuery.eq('branch_id', branchId)
-    tQuery = tQuery.limit(6)
-
-    const { data: trainerData } = await tQuery
+    const { data: trainerData } = await getScopedTrainers(permissions, {
+      branchId,
+      sportId,
+      limit: 6
+    })
 
     if (trainerData) {
       setTrainers(
@@ -165,20 +174,107 @@ export function AdminDashboard() {
       setTrainers([])
     }
 
-    // 3. Fetch Enrollment Count
-    let cQuery = supabase.from('students').select('*', { count: 'exact', head: true })
-    if (branchId !== 'all') cQuery = cQuery.eq('branch_id', branchId)
-    
-    const { count } = await cQuery
+    // 3. Aggregate Stats
+    const { role, branchIds, sportIds } = permissions
 
-    if (count !== null) {
-      // Assuming a max capacity of 1500 for total, or 300 per branch
-      const maxCap = branchId === 'all' ? 1500 : 300
-      setEnrollment({
-        total: count,
-        capacity: Math.min(Math.round((count / maxCap) * 100), 100),
-      })
+    // Student count query
+    let studentCountQuery = supabase.from('students').select('*', { count: 'exact', head: true })
+    if (branchId !== 'all') {
+      studentCountQuery = studentCountQuery.eq('branch_id', branchId)
+    } else if (branchIds.length > 0) {
+      studentCountQuery = studentCountQuery.in('branch_id', branchIds)
     }
+    
+    let filteredStudentIds = null
+    const effectiveSportId = sportId && sportId !== 'all' ? sportId : null
+    if (effectiveSportId) {
+      const { data: ss } = await supabase
+        .from('student_sports')
+        .select('student_id')
+        .eq('sport_id', effectiveSportId)
+      filteredStudentIds = ss?.map(s => s.student_id) || []
+      if (filteredStudentIds.length === 0) {
+        setEnrollment({ total: 0, capacity: 0 })
+        setStats({ totalStudents: 0, totalTrainers: 0, totalBatches: 0, revenue: 0 })
+        return
+      }
+      studentCountQuery = studentCountQuery.in('id', filteredStudentIds)
+    } else if (role === 'sport_admin' && sportIds.length > 0) {
+      const { data: ss } = await supabase
+        .from('student_sports')
+        .select('student_id')
+        .in('sport_id', sportIds)
+      filteredStudentIds = ss?.map(s => s.student_id) || []
+      if (filteredStudentIds.length === 0) {
+        setEnrollment({ total: 0, capacity: 0 })
+        setStats({ totalStudents: 0, totalTrainers: 0, totalBatches: 0, revenue: 0 })
+        return
+      }
+      studentCountQuery = studentCountQuery.in('id', filteredStudentIds)
+    }
+    const { count: studentCount } = await studentCountQuery
+
+    // Trainer count query
+    let trainerCountQuery = supabase.from('trainers').select('*', { count: 'exact', head: true })
+    if (branchId !== 'all') {
+      trainerCountQuery = trainerCountQuery.eq('branch_id', branchId)
+    } else if (branchIds.length > 0) {
+      trainerCountQuery = trainerCountQuery.in('branch_id', branchIds)
+    }
+
+    let filteredTrainerIds = null
+    if (effectiveSportId) {
+      const { data: ts } = await supabase
+        .from('trainer_sports')
+        .select('trainer_id')
+        .eq('sport_id', effectiveSportId)
+      filteredTrainerIds = ts?.map(t => t.trainer_id) || []
+      if (filteredTrainerIds.length === 0) {
+        // No trainers
+      } else {
+        trainerCountQuery = trainerCountQuery.in('id', filteredTrainerIds)
+      }
+    } else if (role === 'sport_admin' && sportIds.length > 0) {
+      const { data: ts } = await supabase
+        .from('trainer_sports')
+        .select('trainer_id')
+        .in('sport_id', sportIds)
+      filteredTrainerIds = ts?.map(t => t.trainer_id) || []
+      if (filteredTrainerIds.length === 0) {
+        // No trainers
+      } else {
+        trainerCountQuery = trainerCountQuery.in('id', filteredTrainerIds)
+      }
+    }
+    const { count: trainerCount } = (filteredTrainerIds && filteredTrainerIds.length === 0) ? { count: 0 } : await trainerCountQuery
+
+    // Batch count query
+    let batchCountQuery = supabase.from('batches').select('*', { count: 'exact', head: true })
+    if (branchId !== 'all') {
+      batchCountQuery = batchCountQuery.eq('branch_id', branchId)
+    } else if (branchIds.length > 0) {
+      batchCountQuery = batchCountQuery.in('branch_id', branchIds)
+    }
+    if (effectiveSportId) {
+      batchCountQuery = batchCountQuery.eq('sport_id', effectiveSportId)
+    } else if (role === 'sport_admin' && sportIds.length > 0) {
+      batchCountQuery = batchCountQuery.in('sport_id', sportIds)
+    }
+    const { count: batchCount } = await batchCountQuery
+
+    const total = studentCount || 0
+    const maxCap = branchId === 'all' ? 1500 : 300
+    setEnrollment({
+      total,
+      capacity: Math.min(Math.round((total / maxCap) * 100), 100),
+    })
+
+    setStats({
+      totalStudents: total,
+      totalTrainers: trainerCount || 0,
+      totalBatches: batchCount || 0,
+      revenue: 0,
+    })
   }
 
   const filteredStudents = students.filter((s) =>
@@ -187,6 +283,7 @@ export function AdminDashboard() {
   )
 
   const selectedBranchName = selectedBranch === 'all' ? 'All Branches' : branches.find(b => b.id === selectedBranch)?.name
+  const sportFeature = SPORT_FEATURES[selectedSportData?.sport_name] || null
 
   return (
     <motion.div
@@ -202,10 +299,10 @@ export function AdminDashboard() {
       >
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-[#0A1F30] sm:text-3xl">
-            Master Dashboard
+            {selectedSportName === 'All Sports' ? 'Master Dashboard' : `${selectedSportName} Dashboard`}
           </h1>
           <p className="mt-1 font-sans text-sm text-gray-500">
-            Academy overview for {selectedBranchName}.
+            {selectedSportName} overview for {selectedBranchName}.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -223,71 +320,95 @@ export function AdminDashboard() {
         </div>
       </motion.div>
 
-      {/* ── Top Row: Enrollment + Head Instructor ── */}
-      <div className="grid gap-5 md:grid-cols-2">
-        {/* Active Enrollment */}
+      {/* ── Stats Row ── */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <motion.div variants={itemVariants}>
           <Card className="rounded-2xl border-0 bg-white shadow-sm ring-1 ring-gray-100">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0A1F30]/5">
-                  <Users className="size-4 text-[#0A1F30]" />
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                  <Users className="size-5 text-blue-600" />
                 </div>
-                <CardTitle className="text-sm font-medium text-gray-500">
-                  Active Enrollment ({selectedBranchName})
-                </CardTitle>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Students</p>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-end justify-between">
-                <span className="font-heading text-4xl font-bold tracking-tight text-[#0A1F30]">
-                  {enrollment.total.toLocaleString()}
-                </span>
-                <span className="mb-1 font-mono text-xs font-medium text-[#22c55e]">
-                  {enrollment.capacity}% Capacity
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-[#22c55e] to-[#16a34a]"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${enrollment.capacity}%` }}
-                  transition={{ duration: 1, delay: 0.5, ease: 'easeOut' }}
-                />
-              </div>
+              <p className="text-3xl font-bold text-[#0A1F30]">{stats.totalStudents}</p>
             </CardContent>
           </Card>
         </motion.div>
-
-        {/* Head Instructor Card */}
         <motion.div variants={itemVariants}>
-          <Card className="rounded-2xl border-0 bg-[#0A1F30] text-white shadow-sm ring-0">
-            <CardContent className="flex items-start gap-4 pt-2">
-              <InitialsAvatar
-                initials={headInstructor.initials}
-                size="lg"
-                bgColor="#C5A059"
-                online={headInstructor.online}
-              />
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-heading text-base font-semibold">
-                    {headInstructor.name}
-                  </h3>
-                  <span className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-[#C5A059]">
-                    <Shield className="size-3" />
-                    {headInstructor.rank}
-                  </span>
+          <Card className="rounded-2xl border-0 bg-white shadow-sm ring-1 ring-gray-100">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                  <Shield className="size-5 text-emerald-600" />
                 </div>
-                <p className="text-xs leading-relaxed text-white/70">
-                  {headInstructor.description}
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Trainers</p>
+              </div>
+              <p className="text-3xl font-bold text-[#0A1F30]">{stats.totalTrainers}</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <Card className="rounded-2xl border-0 bg-white shadow-sm ring-1 ring-gray-100">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
+                  <Calendar className="size-5 text-purple-600" />
+                </div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Batches</p>
+              </div>
+              <p className="text-3xl font-bold text-[#0A1F30]">{stats.totalBatches}</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <Card className="rounded-2xl border-0 bg-white shadow-sm ring-1 ring-gray-100">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-[#C5A059]/10 flex items-center justify-center">
+                  {sportFeature
+                    ? <span className="text-xl">{sportFeature.icon}</span>
+                    : <Dumbbell className="size-5 text-[#C5A059]" />
+                  }
+                </div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">
+                  {sportFeature ? sportFeature.label : 'Sport Feature'}
                 </p>
               </div>
+              <p className="text-3xl font-bold text-[#0A1F30]">
+                {isKarate ? '9 Belts' : '—'}
+              </p>
             </CardContent>
           </Card>
         </motion.div>
       </div>
+
+      {/* ── Enrollment Bar ── */}
+      <motion.div variants={itemVariants}>
+        <Card className="rounded-2xl border-0 bg-white shadow-sm ring-1 ring-gray-100">
+          <CardContent className="p-5">
+            <div className="flex items-end justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="size-4 text-[#C5A059]" />
+                <span className="text-sm font-semibold text-[#0A1F30]">
+                  {selectedSportName} Enrollment ({selectedBranchName})
+                </span>
+              </div>
+              <span className="font-mono text-xs font-medium text-[#22c55e]">
+                {enrollment.capacity}% Capacity
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-[#22c55e] to-[#16a34a]"
+                initial={{ width: 0 }}
+                animate={{ width: `${enrollment.capacity}%` }}
+                transition={{ duration: 1, delay: 0.5, ease: 'easeOut' }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* ── Bottom Row: Student Enrollment Table + Academy Trainers ── */}
       <div className="grid gap-5 lg:grid-cols-5">
@@ -298,7 +419,7 @@ export function AdminDashboard() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0A1F30]">
                   <Award className="size-4 text-[#C5A059]" />
-                  Recent Student Enrollment
+                  Recent {selectedSportName} Students
                 </CardTitle>
                 <div className="relative w-full sm:w-56">
                   <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-gray-400" />
@@ -319,7 +440,7 @@ export function AdminDashboard() {
                   Student / ID
                 </span>
                 <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Rank
+                  {isKarate ? 'Rank' : 'Status'}
                 </span>
                 <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-gray-400 text-center w-8">
                   ATT
@@ -351,20 +472,26 @@ export function AdminDashboard() {
                       </div>
                     </div>
 
-                    {/* Belt rank badge */}
-                    <span
-                      className="inline-flex items-center rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider"
-                      style={{
-                        backgroundColor:
-                          (BELT_COLORS[student.belt] || '#e5e7eb') + '18',
-                        color: BELT_COLORS[student.belt] || '#6b7280',
-                        border: `1px solid ${
-                          (BELT_COLORS[student.belt] || '#e5e7eb') + '30'
-                        }`,
-                      }}
-                    >
-                      {student.belt}
-                    </span>
+                    {/* Belt rank badge (Karate) or Active badge (others) */}
+                    {isKarate ? (
+                      <span
+                        className="inline-flex items-center rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider"
+                        style={{
+                          backgroundColor:
+                            (BELT_COLORS[student.belt] || '#e5e7eb') + '18',
+                          color: BELT_COLORS[student.belt] || '#6b7280',
+                          border: `1px solid ${
+                            (BELT_COLORS[student.belt] || '#e5e7eb') + '30'
+                          }`,
+                        }}
+                      >
+                        {student.belt}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-200">
+                        ENROLLED
+                      </span>
+                    )}
 
                     {/* Attendance dot */}
                     <div className="flex justify-center w-8">
@@ -381,7 +508,7 @@ export function AdminDashboard() {
 
                 {filteredStudents.length === 0 && (
                   <div className="py-8 text-center text-xs text-gray-400">
-                    No students found.
+                    No students found for {selectedSportName}.
                   </div>
                 )}
               </div>
@@ -395,11 +522,11 @@ export function AdminDashboard() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0A1F30]">
-                  Academy Trainers
+                  {selectedSportName} Trainers
                 </CardTitle>
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#0A1F30]/5 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#0A1F30]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#22c55e]" />
-                  {trainers.length} STAFF ON DUTY
+                  {trainers.length} STAFF
                 </span>
               </div>
             </CardHeader>
@@ -448,7 +575,7 @@ export function AdminDashboard() {
 
               {trainers.length === 0 && (
                 <div className="py-6 text-center text-xs text-gray-400">
-                  No trainers found in this branch.
+                  No trainers found for {selectedSportName}.
                 </div>
               )}
 

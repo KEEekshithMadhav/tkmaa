@@ -24,14 +24,18 @@ import {
   ChevronRight, Download
 } from 'lucide-react'
 import { useForm } from "react-hook-form"
-import { supabase, getTrainers } from '@/lib/supabase'
+import { supabase, getScopedTrainers } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useBranch } from '@/context/BranchContext'
+import { useSport } from '@/context/SportContext'
+import { useAuth } from '@/context/AuthContext'
 import { Badge } from "@/components/ui/badge"
 
 export default function TrainersPage() {
   const [trainers, setTrainers] = useState([])
   const { branches, selectedBranch } = useBranch()
+  const { selectedSport } = useSport()
+  const { permissions } = useAuth()
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -39,16 +43,17 @@ export default function TrainersPage() {
 
   const { register, handleSubmit, reset } = useForm()
 
-  useEffect(() => {
-    async function loadTrainers() {
-      setLoading(true)
-      const { data } = await getTrainers(selectedBranch)
-      if (data) setTrainers(data)
-      setLoading(false)
-    }
+  const loadTrainers = async () => {
+    if (!permissions) return
+    setLoading(true)
+    const { data } = await getScopedTrainers(permissions, { branchId: selectedBranch, sportId: selectedSport })
+    if (data) setTrainers(data)
+    setLoading(false)
+  }
 
+  useEffect(() => {
     loadTrainers()
-  }, [selectedBranch])
+  }, [selectedBranch, selectedSport, permissions])
 
   const onSubmit = async (formData) => {
     setIsSubmitting(true)
@@ -95,7 +100,7 @@ export default function TrainersPage() {
       toast.success('Personnel record established successfully', { id: toastId })
       setOpen(false)
       reset()
-      fetchTrainers()
+      loadTrainers()
     } catch (err) {
       toast.error('Initialization failed: ' + err.message, { id: toastId })
     } finally {

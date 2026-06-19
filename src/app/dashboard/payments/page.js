@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useBranch } from '@/context/BranchContext'
+import { useSport } from '@/context/SportContext'
 import { useForm } from "react-hook-form"
 import { toast } from 'sonner'
 import { Badge } from "@/components/ui/badge"
@@ -38,7 +39,8 @@ export default function PaymentsPage() {
   const [payments, setPayments] = useState([])
   const [feeStructures, setFeeStructures] = useState([])
   const [receipts, setReceipts] = useState([])
-  const { branches } = useBranch()
+  const { branches, selectedBranch } = useBranch()
+  const { selectedSport } = useSport()
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -72,14 +74,34 @@ export default function PaymentsPage() {
     if (activeTab === 'ledger') fetchPayments()
     if (activeTab === 'fee_structure') fetchFeeStructures()
     if (activeTab === 'receipts') fetchReceipts()
-  }, [activeTab])
+  }, [activeTab, selectedBranch, selectedSport])
 
   async function fetchPayments() {
     setLoading(true)
-    const { data } = await supabase
+    
+    let studentIds = null
+    if (selectedSport && selectedSport !== 'all') {
+      const { data: ss } = await supabase
+        .from('student_sports')
+        .select('student_id')
+        .eq('sport_id', selectedSport)
+      studentIds = ss?.map(s => s.student_id) || []
+      if (studentIds.length === 0) {
+        setPayments([])
+        setLoading(false)
+        return
+      }
+    }
+
+    let query = supabase
       .from('payments')
       .select('*, students(users(full_name)), branches(name)')
       .order('created_at', { ascending: false })
+      
+    if (selectedBranch !== 'all') query = query.eq('branch_id', selectedBranch)
+    if (studentIds !== null) query = query.in('student_id', studentIds)
+    
+    const { data } = await query
     if (data) setPayments(data)
     setLoading(false)
   }

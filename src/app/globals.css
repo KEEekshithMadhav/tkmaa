@@ -444,6 +444,11 @@
   animation: shimmer 2s linear infinite;
 }
 
+/* Animated text shimmer for hero gradient */
+.animate-text-shimmer {
+  animation: text-shimmer 4s ease-in-out infinite;
+}
+
 .animate-glow-pulse {
   animation: glow-pulse 4s ease-in-out infinite;
 }

@@ -24,15 +24,38 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
+      // Step 1: Aggressively wipe ALL stale Supabase tokens from browser storage
+      // This prevents "Invalid Refresh Token" errors from old cached sessions
+      try {
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch (_) { /* ignore */ }
+
+      // Clear every sb-* key from localStorage and sessionStorage
+      ;[localStorage, sessionStorage].forEach(store => {
+        Object.keys(store).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) store.removeItem(key)
+        })
+      })
+
+      // Step 2: Fresh sign-in with provided credentials
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      
+
       toast.success('Access Granted. Redirecting to Dashboard...')
       router.push('/dashboard')
     } catch (err) {
       const msg = err.message || ''
-      if (msg.includes('Invalid login credentials')) {
-        toast.error('Authentication Failed: Invalid credentials')
+      if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials') || msg.includes('Invalid email or password')) {
+        toast.error('Invalid email or password. Please check and try again.')
+      } else if (msg.includes('Email not confirmed')) {
+        toast.error('Email not confirmed. Contact your admin.')
+      } else if (msg.includes('Refresh Token') || msg.includes('refresh_token')) {
+        ;[localStorage, sessionStorage].forEach(store => {
+          Object.keys(store).forEach(key => {
+            if (key.startsWith('sb-')) store.removeItem(key)
+          })
+        })
+        toast.error('Session cleared. Please try signing in again.')
       } else {
         toast.error(`Error: ${msg}`)
       }
